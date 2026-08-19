@@ -5,35 +5,50 @@ const prompt = `You are Dressup Sesh Listing Studio, a precision Poshmark listin
 
 Study every supplied photo as one product. Return ONLY a finished listing in this exact layout:
 
-**Title:**
 [Brand + model/style + color + material + item type + size]
 
-**Description:**
-[Product paragraph identifying the item, color, material, silhouette and distinctive design features. Bold a confirmed model/style name once.]
+[Product paragraph identifying the item, color, material, silhouette and distinctive design features.]
 
 [Trend and styling paragraph using only visually appropriate fashion searches, eras and styling ideas.]
 
-**Size:** [size]
-**Heel:** [approximate measurement, only when applicable and visible]
+Size: [size]
+Heel: [approximate measurement, only when applicable and visible]
+Measurements: [all legible product dimensions and units shown in measurement photos; omit only when none are supplied]
 [Material facts, one per plain line]
 [Country of manufacture, only when visible]
 
 [One accurate condition paragraph based only on visible wear.]
 
-**Keywords:** [comma-separated search phrases]
+Keywords: [comma-separated search phrases]
 
-**Estimated era:** [cautious estimate]
-**Approx. original retail:** **[$XX–$XX]**
+Estimated era: [cautious estimate]
+Approx. original retail: [$XX–$XX]
 
 Rules:
-- Begin with **Title:** and end immediately after original retail.
-- Keep the title on one line.
+- Begin with the title itself on the first line and end immediately after original retail.
+- Keep the title on one line, followed by one blank line and then the description.
+- Never include “Title” or “Description” labels or headings.
+- Never use Markdown, asterisks or bold formatting anywhere.
 - Never add introductions, explanations, notes, questions, confidence, product ID, key details, pricing advice, suggested listing price, photo recommendations, checklists, bullets, tables or READY TO POST.
 - Never invent a brand, model, material, size, measurement or country.
-- Read labels and measurement photos carefully. Omit facts that cannot be verified or reasonably inferred.
+- Treat measurement photos as high-priority evidence. Transcribe every legible product measurement and unit; do not replace dimensions with “OS.”
+- Never claim a shoulder, crossbody or removable strap unless the strap itself is visibly included. Strap rings or attachment hardware alone are not proof.
+- Describe leather grain or finish only when it is unmistakably visible. Do not infer pebbled, smooth, saffiano or other texture from the product category.
+- Read labels and measurement photos carefully. Omit entire lines for facts that cannot be verified or reasonably inferred; never write “not visible,” “unknown” or similar placeholders.
 - Use “approx.” for measurements read from photos.
 - Describe only wear visible in the photographs.
 - Do not call an item vintage unless its age supports the term, and never call it rare without proof.`;
+
+function cleanListing(value: string) {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\*/g, "")
+    .replace(/^[ \t]*Title[ \t]*:[ \t]*/gim, "")
+    .replace(/^[ \t]*Description[ \t]*:[ \t]*/gim, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function toBase64(bytes: Uint8Array) {
   let binary = "";
@@ -63,12 +78,16 @@ Deno.serve(async (request: Request) => {
     if (!apiKey) throw new Error("NOT_CONFIGURED");
 
     const form = await request.formData();
+    const additionalInfo = String(form.get("additional_info") || "").trim().slice(0, 2000);
     const images = form.getAll("images").filter((value): value is File => value instanceof File).slice(0, 10);
     if (!images.length) {
       return new Response(JSON.stringify({ error: "At least one product image is required." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    const content: Array<Record<string, unknown>> = [{ type: "input_text", text: prompt }];
+    const additionalInfoBlock = additionalInfo
+      ? `\n\nOWNER-SUPPLIED REFERENCE INFORMATION (trusted facts for this item):\n${additionalInfo}\n\nUse all relevant owner-supplied facts naturally in the exact listing layout. Treat these facts as higher priority than visual inference when they conflict. Do not mention that reference information was supplied and do not create an extra notes section.`
+      : "";
+    const content: Array<Record<string, unknown>> = [{ type: "input_text", text: `${prompt}${additionalInfoBlock}` }];
     for (const image of images) {
       if (!/^(image\/png|image\/jpeg|image\/webp|image\/gif)$/i.test(image.type)) {
         return new Response(JSON.stringify({ error: "Process HEIC photos first so listing analysis can use the JPEG results." }), { status: 415, headers: { ...cors, "Content-Type": "application/json" } });
@@ -84,7 +103,7 @@ Deno.serve(async (request: Request) => {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-5.6-terra",
+        model: "gpt-5.6-luna",
         store: false,
         reasoning: { effort: "low" },
         max_output_tokens: 1400,
@@ -131,7 +150,9 @@ Deno.serve(async (request: Request) => {
     const outputText = payload.output_text || payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || []).find((item: { type?: string }) => item.type === "output_text")?.text;
     const parsed = JSON.parse(outputText || "{}");
     if (!parsed.listing) throw new Error("INVALID_MODEL_OUTPUT");
-    return new Response(JSON.stringify({ listing: parsed.listing }), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    const listing = cleanListing(String(parsed.listing));
+    if (!listing) throw new Error("INVALID_MODEL_OUTPUT");
+    return new Response(JSON.stringify({ listing }), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("create-listing error", error);
     return errorResponse(error, cors);
