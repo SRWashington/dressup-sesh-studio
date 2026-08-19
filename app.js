@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-import { removeBackground } from "https://esm.sh/@imgly/background-removal@1.7.0?deps=onnxruntime-web@1.21.0";
 
 const config = window.DRESSUP_CONFIG || {};
 const configured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
@@ -7,7 +6,6 @@ const supabase = configured ? createClient(config.supabaseUrl, config.supabasePu
 const state = {
   photos: [],
   background: "white",
-  quality: "fast",
   processing: false,
   processedCount: 0,
   session: null,
@@ -222,7 +220,7 @@ function render() {
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
   const completedPhotos = state.photos.filter((photo) => photo.resultBlob);
-  elements.process.disabled = !usablePhotos.length || state.processing || isPreparing;
+  elements.process.disabled = !configured || !state.session || !usablePhotos.length || state.processing || isPreparing;
   elements.downloadAll.disabled = !completedPhotos.length || state.processing;
   elements.clearAll.disabled = state.processing || state.creativeGenerating;
   elements.downloadAll.textContent = completedPhotos.length ? `DOWNLOAD ALL · ${completedPhotos.length}` : "DOWNLOAD ALL";
@@ -268,179 +266,62 @@ function render() {
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
 
-async function cleanAlphaMask(foregroundBlob, qualityMode = "fast") {
-  const image = await createImageBitmap(foregroundBlob);
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(image, 0, 0);
-  image.close();
-
-  const width = canvas.width;
-  const height = canvas.height;
-  const pixelCount = width * height;
-  const imageData = context.getImageData(0, 0, width, height);
-  const pixels = imageData.data;
-  const settings = qualityMode === "best"
-    ? {
-        transparentCutoff: 54,
-        opaqueCutoff: 208,
-        contrastGamma: 1.08,
-        strongAlpha: 148,
-        supportRadius: 11,
-        minimumComponentFloor: 1600,
-        minimumComponentRatio: 0.00075,
-        softComponentAlpha: 96
-      }
-    : {
-        transparentCutoff: 108,
-        opaqueCutoff: 222,
-        contrastGamma: 1.22,
-        strongAlpha: 170,
-        supportRadius: 7,
-        minimumComponentFloor: 2200,
-        minimumComponentRatio: 0.001,
-        softComponentAlpha: 112
-      };
-  const { transparentCutoff, opaqueCutoff } = settings;
-  const range = opaqueCutoff - transparentCutoff;
-
-  for (let index = 3; index < pixels.length; index += 4) {
-    const alpha = pixels[index];
-    if (alpha <= transparentCutoff) {
-      pixels[index] = 0;
-    } else if (alpha >= opaqueCutoff) {
-      pixels[index] = 255;
-    } else {
-      const normalized = (alpha - transparentCutoff) / range;
-      const smoothed = normalized * normalized * (3 - (2 * normalized));
-      pixels[index] = Math.round(Math.pow(smoothed, settings.contrastGamma) * 255);
-    }
-  }
-
-  // Keep anti-aliased product edges, but remove low-confidence mask clouds that
-  // are too far away from a strongly identified foreground pixel.
-  const unsupported = 255;
-  const distance = new Uint8Array(pixelCount);
-  distance.fill(unsupported);
-  for (let position = 0; position < pixelCount; position += 1) {
-    if (pixels[(position * 4) + 3] >= settings.strongAlpha) distance[position] = 0;
-  }
-
-  for (let y = 0; y < height; y += 1) {
-    const row = y * width;
-    for (let x = 0; x < width; x += 1) {
-      const position = row + x;
-      if (distance[position] === 0) continue;
-      let nearest = distance[position];
-      if (x > 0) nearest = Math.min(nearest, distance[position - 1] + 1);
-      if (y > 0) {
-        nearest = Math.min(nearest, distance[position - width] + 1);
-        if (x > 0) nearest = Math.min(nearest, distance[position - width - 1] + 1);
-        if (x < width - 1) nearest = Math.min(nearest, distance[position - width + 1] + 1);
-      }
-      distance[position] = Math.min(unsupported, nearest);
-    }
-  }
-
-  for (let y = height - 1; y >= 0; y -= 1) {
-    const row = y * width;
-    for (let x = width - 1; x >= 0; x -= 1) {
-      const position = row + x;
-      let nearest = distance[position];
-      if (x < width - 1) nearest = Math.min(nearest, distance[position + 1] + 1);
-      if (y < height - 1) {
-        nearest = Math.min(nearest, distance[position + width] + 1);
-        if (x > 0) nearest = Math.min(nearest, distance[position + width - 1] + 1);
-        if (x < width - 1) nearest = Math.min(nearest, distance[position + width + 1] + 1);
-      }
-      distance[position] = Math.min(unsupported, nearest);
-      if (pixels[(position * 4) + 3] > 0 && distance[position] > settings.supportRadius) {
-        pixels[(position * 4) + 3] = 0;
-      }
-    }
-  }
-
-  const minimumComponentPixels = Math.max(
-    settings.minimumComponentFloor,
-    Math.floor(pixelCount * settings.minimumComponentRatio)
-  );
-  const visited = new Uint8Array(pixelCount);
-  const queue = new Int32Array(pixelCount);
-
-  for (let start = 0; start < pixelCount; start += 1) {
-    if (visited[start] || pixels[(start * 4) + 3] === 0) continue;
-
-    let head = 0;
-    let tail = 0;
-    let alphaTotal = 0;
-    queue[tail++] = start;
-    visited[start] = 1;
-
-    while (head < tail) {
-      const current = queue[head++];
-      const x = current % width;
-      const y = Math.floor(current / width);
-      alphaTotal += pixels[(current * 4) + 3];
-
-      for (let yOffset = -1; yOffset <= 1; yOffset += 1) {
-        const neighborY = y + yOffset;
-        if (neighborY < 0 || neighborY >= height) continue;
-        for (let xOffset = -1; xOffset <= 1; xOffset += 1) {
-          if (xOffset === 0 && yOffset === 0) continue;
-          const neighborX = x + xOffset;
-          if (neighborX < 0 || neighborX >= width) continue;
-          const neighbor = (neighborY * width) + neighborX;
-          if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
-            visited[neighbor] = 1;
-            queue[tail++] = neighbor;
-          }
-        }
-      }
-    }
-
-    const averageAlpha = alphaTotal / tail;
-    const isSmall = tail < minimumComponentPixels;
-    const isSoftDebris = tail < minimumComponentPixels * 5 && averageAlpha < settings.softComponentAlpha;
-    if (isSmall || isSoftDebris) {
-      for (let index = 0; index < tail; index += 1) {
-        pixels[(queue[index] * 4) + 3] = 0;
-      }
-    }
-  }
-
-  context.putImageData(imageData, 0, 0);
-  return await new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not clean the product edges.")), "image/png", 1);
+function canvasToJpeg(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not prepare this photo.")), "image/jpeg", quality);
   });
 }
 
-async function putOnWhiteBackground(foregroundBlob) {
-  const image = await createImageBitmap(foregroundBlob);
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const context = canvas.getContext("2d");
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0);
-  image.close();
-  return await new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not create the white-background image.")), "image/png", 1);
-  });
-}
+async function prepareBackgroundImage(source) {
+  const image = await createImageBitmap(source);
+  let maxDimension = 1600;
+  let quality = 0.84;
+  let blob = null;
 
-async function withTimeout(promise, milliseconds) {
-  let timeoutId;
-  const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("BACKGROUND_REMOVAL_TIMEOUT")), milliseconds);
-  });
   try {
-    return await Promise.race([promise, timeout]);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      blob = await canvasToJpeg(canvas, quality);
+      if (blob.size <= 900 * 1024) break;
+      maxDimension = Math.round(maxDimension * 0.82);
+      quality = Math.max(0.66, quality - 0.06);
+    }
   } finally {
-    clearTimeout(timeoutId);
+    image.close();
   }
+
+  if (!blob) throw new Error("Could not prepare this photo.");
+  return new File([blob], "product-photo.jpg", { type: "image/jpeg" });
+}
+
+async function removeBackgroundInCloud(photo) {
+  if (!state.session) throw new Error("Sign in again before cleaning photos.");
+  const compactImage = await prepareBackgroundImage(photo.file);
+  const form = new FormData();
+  form.append("image", compactImage, "product-photo.jpg");
+  form.append("background", state.background);
+
+  const response = await fetch(`${config.supabaseUrl}/functions/v1/remove-product-background`, {
+    method: "POST",
+    headers: {
+      apikey: config.supabasePublishableKey,
+      Authorization: `Bearer ${state.session.access_token}`
+    },
+    body: form
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || "The cloud cleanup could not be completed.");
+  }
+  return await response.blob();
 }
 
 async function processPhotos() {
@@ -451,46 +332,23 @@ async function processPhotos() {
   processablePhotos.forEach((photo) => { photo.status = "queued"; photo.statusLabel = "queued"; photo.error = ""; });
   render();
 
-  const qualityMode = state.quality;
-  const model = qualityMode === "best" ? "isnet_fp16" : "isnet_quint8";
-  const timeout = qualityMode === "best" ? 240000 : 120000;
-
   for (const [index, photo] of processablePhotos.entries()) {
     state.processedCount = index;
     photo.status = "processing";
-    photo.statusLabel = index === 0
-      ? (qualityMode === "best" ? "loading best-quality AI" : "loading AI")
-      : "processing";
+    photo.statusLabel = "uploading securely";
     render();
     try {
-      const transparentBlob = await withTimeout(removeBackground(photo.file, {
-        device: "cpu",
-        model,
-        output: { format: "image/png", quality: 1 },
-        progress: (key, current, total) => {
-          if (!key.startsWith("fetch:") || !total) return;
-          const percent = Math.min(100, Math.round((current / total) * 100));
-          photo.statusLabel = percent >= 100 ? "removing background" : `loading ${percent}%`;
-          render();
-        }
-      }), timeout);
-      photo.statusLabel = qualityMode === "best" ? "refining light edges" : "cleaning edges";
-      render();
-      const cleanedTransparentBlob = await cleanAlphaMask(transparentBlob, qualityMode);
+      const cleanedBlob = await removeBackgroundInCloud(photo);
       if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
-      photo.resultBlob = state.background === "white"
-        ? await putOnWhiteBackground(cleanedTransparentBlob)
-        : cleanedTransparentBlob;
+      photo.resultBlob = cleanedBlob;
       photo.resultUrl = URL.createObjectURL(photo.resultBlob);
       photo.status = "complete";
       photo.statusLabel = "ready";
     } catch (error) {
       photo.status = "error";
       photo.statusLabel = "try again";
-      photo.error = error?.message === "BACKGROUND_REMOVAL_TIMEOUT"
-        ? "The local AI took too long. Refresh the page and try this photo again."
-        : "Couldn’t process this photo. Please refresh and try again.";
-      console.error("Local background removal failed", error);
+      photo.error = error?.message || "Couldn’t process this photo. Please try again.";
+      console.error("Cloud background removal failed", error);
     }
     render();
   }
@@ -740,12 +598,6 @@ $$('[data-background]').forEach((button) => button.addEventListener("click", () 
   state.background = button.dataset.background;
   $$('[data-background]').forEach((item) => item.classList.toggle("selected", item === button));
   render();
-}));
-
-$$('[data-quality]').forEach((button) => button.addEventListener("click", () => {
-  if (state.processing) return;
-  state.quality = button.dataset.quality;
-  $$('[data-quality]').forEach((item) => item.classList.toggle("selected", item === button));
 }));
 
 elements.gateSignIn.addEventListener("click", () => {
