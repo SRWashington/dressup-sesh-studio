@@ -47,10 +47,18 @@ function toBase64(bytes: Uint8Array) {
 Deno.serve(async (request: Request) => {
   const cors = corsHeaders(request);
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: cors });
+  if (request.method !== "GET" && request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: cors });
+  }
 
   try {
     await requireOwner(request);
+    if (request.method === "GET") {
+      return new Response(JSON.stringify({ owner: true }), {
+        headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) throw new Error("NOT_CONFIGURED");
 
@@ -100,7 +108,24 @@ Deno.serve(async (request: Request) => {
     const payload = await response.json();
     if (!response.ok) {
       console.error("OpenAI error", response.status, JSON.stringify(payload).slice(0, 1000));
-      return new Response(JSON.stringify({ error: "Listing generation failed." }), { status: response.status, headers: { ...cors, "Content-Type": "application/json" } });
+      const errorCode = String(payload?.error?.code || "");
+      const billingCodes = new Set([
+        "credit_balance_exhausted",
+        "organization_spend_limit_exceeded",
+        "project_spend_limit_exceeded",
+        "organization_usage_limit_exceeded",
+      ]);
+      const message = response.status === 429 && billingCodes.has(errorCode)
+        ? "OpenAI API billing needs attention. Add credits or raise the project spending limit, then try again."
+        : response.status === 429
+          ? "OpenAI is temporarily rate-limiting requests. Wait a minute and try again."
+          : response.status === 401
+            ? "The OpenAI API key was rejected. Replace OPENAI_API_KEY in Supabase and try again."
+            : "Listing generation failed. Please try again.";
+      return new Response(JSON.stringify({ error: message, code: errorCode || undefined }), {
+        status: response.status,
+        headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
     }
 
     const outputText = payload.output_text || payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || []).find((item: { type?: string }) => item.type === "output_text")?.text;
