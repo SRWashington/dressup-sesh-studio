@@ -14,7 +14,12 @@ const state = {
   creativeReference: null,
   creativeReferenceUrl: "",
   creativeResultUrl: "",
-  creativeGenerating: false
+  creativeGenerating: false,
+  editorPhotoId: null,
+  editorImage: null,
+  editorStrokes: [],
+  editorDrawing: false,
+  editorCurrentStroke: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -33,7 +38,10 @@ const elements = {
   creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
   referenceImage: $("#reference-image"), removeReference: $("#remove-reference"), creativeInstructions: $("#creative-instructions"),
   creativeGenerate: $("#creative-generate"), creativeOutput: $(".creative-output"), creativePlaceholder: $("#creative-placeholder"),
-  creativeOutputImage: $("#creative-output-image"), creativeDownload: $("#creative-download"), creativeError: $("#creative-error")
+  creativeOutputImage: $("#creative-output-image"), creativeDownload: $("#creative-download"), creativeError: $("#creative-error"),
+  editorDialog: $("#photo-editor-dialog"), editorCanvas: $("#photo-editor-canvas"), editorBrush: $("#editor-brush-size"),
+  editorBrushOutput: $("#editor-brush-output"), editorUndo: $("#editor-undo"), editorReset: $("#editor-reset"),
+  editorCancel: $("#editor-cancel"), editorApply: $("#editor-apply")
 };
 
 const creativeLabels = {
@@ -254,7 +262,7 @@ function render() {
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
       <div class="photo-meta"><strong>PHOTO ${String(index + 1).padStart(2, "0")}</strong>
-      ${photo.resultUrl ? `<a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a>` : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
+      ${photo.resultUrl ? `<span class="photo-actions"><button class="photo-edit" type="button" data-edit="${photo.id}">EDIT</button><a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a></span>` : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
       ${photo.error ? `<p class="error-text">${photo.error}</p>` : ""}
     </article>`).join("") + (state.photos.length < 20 ? `<button class="add-card" id="add-more"><span>＋</span>Add more</button>` : "");
 
@@ -267,7 +275,144 @@ function render() {
     (usablePhotos.length > 6 ? `<span>+${usablePhotos.length - 6}</span>` : "");
 
   $$('[data-remove]').forEach((button) => button.addEventListener("click", () => removePhoto(button.dataset.remove)));
+  $$('[data-edit]').forEach((button) => button.addEventListener("click", () => { void openPhotoEditor(button.dataset.edit); }));
   $("#add-more")?.addEventListener("click", () => elements.input.click());
+}
+
+function canvasToPng(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not save this edit.")), "image/png", 1);
+  });
+}
+
+function drawEditorStroke(context, stroke) {
+  if (!stroke?.points?.length) return;
+  context.save();
+  context.globalCompositeOperation = "destination-out";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.lineWidth = stroke.size;
+  if (stroke.points.length === 1) {
+    context.beginPath();
+    context.arc(stroke.points[0].x, stroke.points[0].y, stroke.size / 2, 0, Math.PI * 2);
+    context.fill();
+  } else {
+    context.beginPath();
+    context.moveTo(stroke.points[0].x, stroke.points[0].y);
+    stroke.points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+    context.stroke();
+  }
+  context.restore();
+}
+
+function redrawPhotoEditor() {
+  if (!state.editorImage) return;
+  const canvas = elements.editorCanvas;
+  const context = canvas.getContext("2d");
+  context.globalCompositeOperation = "source-over";
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(state.editorImage, 0, 0);
+  state.editorStrokes.forEach((stroke) => drawEditorStroke(context, stroke));
+}
+
+function editorPoint(event) {
+  const rect = elements.editorCanvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(elements.editorCanvas.width, (event.clientX - rect.left) * (elements.editorCanvas.width / rect.width))),
+    y: Math.max(0, Math.min(elements.editorCanvas.height, (event.clientY - rect.top) * (elements.editorCanvas.height / rect.height)))
+  };
+}
+
+function beginEditorStroke(event) {
+  if (!state.editorImage) return;
+  event.preventDefault();
+  const rect = elements.editorCanvas.getBoundingClientRect();
+  const scale = elements.editorCanvas.width / rect.width;
+  const stroke = {
+    size: Number(elements.editorBrush.value) * scale,
+    points: [editorPoint(event)]
+  };
+  state.editorDrawing = true;
+  state.editorCurrentStroke = stroke;
+  state.editorStrokes.push(stroke);
+  elements.editorCanvas.setPointerCapture?.(event.pointerId);
+  drawEditorStroke(elements.editorCanvas.getContext("2d"), stroke);
+}
+
+function continueEditorStroke(event) {
+  if (!state.editorDrawing || !state.editorCurrentStroke) return;
+  event.preventDefault();
+  const previous = state.editorCurrentStroke.points.at(-1);
+  const current = editorPoint(event);
+  state.editorCurrentStroke.points.push(current);
+  drawEditorStroke(elements.editorCanvas.getContext("2d"), {
+    size: state.editorCurrentStroke.size,
+    points: [previous, current]
+  });
+}
+
+function endEditorStroke(event) {
+  if (!state.editorDrawing) return;
+  event.preventDefault();
+  state.editorDrawing = false;
+  state.editorCurrentStroke = null;
+  elements.editorCanvas.releasePointerCapture?.(event.pointerId);
+}
+
+function releasePhotoEditor() {
+  state.editorImage?.close?.();
+  state.editorPhotoId = null;
+  state.editorImage = null;
+  state.editorStrokes = [];
+  state.editorDrawing = false;
+  state.editorCurrentStroke = null;
+}
+
+function closePhotoEditor() {
+  if (elements.editorDialog.open) elements.editorDialog.close();
+  else releasePhotoEditor();
+}
+
+async function openPhotoEditor(photoId) {
+  const photo = state.photos.find((item) => item.id === photoId);
+  if (!photo?.resultBlob || state.processing) return;
+  releasePhotoEditor();
+  state.editorPhotoId = photoId;
+  state.editorImage = await createImageBitmap(photo.resultBlob);
+  elements.editorCanvas.width = state.editorImage.width;
+  elements.editorCanvas.height = state.editorImage.height;
+  redrawPhotoEditor();
+  elements.editorDialog.showModal();
+}
+
+async function applyPhotoEdit() {
+  const photo = state.photos.find((item) => item.id === state.editorPhotoId);
+  if (!photo || !state.editorImage) return;
+  elements.editorApply.disabled = true;
+  elements.editorApply.textContent = "SAVING…";
+  try {
+    let outputCanvas = elements.editorCanvas;
+    if (state.background === "white") {
+      outputCanvas = document.createElement("canvas");
+      outputCanvas.width = elements.editorCanvas.width;
+      outputCanvas.height = elements.editorCanvas.height;
+      const context = outputCanvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+      context.drawImage(elements.editorCanvas, 0, 0);
+    }
+    const editedBlob = await canvasToPng(outputCanvas);
+    if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
+    photo.resultBlob = editedBlob;
+    photo.resultUrl = URL.createObjectURL(editedBlob);
+    photo.status = "complete";
+    photo.statusLabel = "edited";
+    closePhotoEditor();
+    render();
+  } finally {
+    elements.editorApply.disabled = false;
+    elements.editorApply.textContent = "APPLY EDIT";
+  }
 }
 
 function canvasToJpeg(canvas, quality) {
@@ -364,7 +509,7 @@ async function processPhotos() {
       const nextPhoto = processablePhotos[index + 1];
       nextPhoto.statusLabel = "waiting for cloud slot";
       render();
-      await wait(10500);
+      await wait(4000);
     }
   }
   state.processing = false;
@@ -566,6 +711,24 @@ elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.emptyCreative.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.creativeGenerate.addEventListener("click", generateCreativeImage);
+elements.editorCanvas.addEventListener("pointerdown", beginEditorStroke);
+elements.editorCanvas.addEventListener("pointermove", continueEditorStroke);
+elements.editorCanvas.addEventListener("pointerup", endEditorStroke);
+elements.editorCanvas.addEventListener("pointercancel", endEditorStroke);
+elements.editorBrush.addEventListener("input", () => { elements.editorBrushOutput.textContent = elements.editorBrush.value; });
+elements.editorUndo.addEventListener("click", () => {
+  state.editorStrokes.pop();
+  redrawPhotoEditor();
+});
+elements.editorReset.addEventListener("click", () => {
+  state.editorStrokes = [];
+  redrawPhotoEditor();
+});
+elements.editorCancel.addEventListener("click", closePhotoEditor);
+elements.editorApply.addEventListener("click", () => {
+  void applyPhotoEdit().catch((error) => window.alert(error?.message || "Could not save this edit."));
+});
+elements.editorDialog.addEventListener("close", releasePhotoEditor);
 elements.copyButton.addEventListener("click", async () => {
   await navigator.clipboard.writeText(elements.listingOutput.textContent);
   elements.copyButton.textContent = "COPIED";
