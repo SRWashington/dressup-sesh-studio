@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=download-all-4">
+  <link rel="stylesheet" href="styles.css?v=quality-modes-5">
   <link rel="stylesheet" href="auth.css">
 </head>
 <body>
@@ -48,10 +48,17 @@
       <div class="photo-grid hidden" id="photo-grid"></div>
 
       <div class="action-bar hidden" id="action-bar">
-        <div class="background-choice">
-          <span>BACKGROUND</span>
-          <button class="selected" data-background="white"><i class="white-swatch"></i> White</button>
-          <button data-background="transparent"><i class="transparent-swatch"></i> Transparent</button>
+        <div class="processing-options">
+          <div class="background-choice">
+            <span>BACKGROUND</span>
+            <button class="selected" data-background="white"><i class="white-swatch"></i> White</button>
+            <button data-background="transparent"><i class="transparent-swatch"></i> Transparent</button>
+          </div>
+          <div class="quality-choice">
+            <span>QUALITY</span>
+            <button class="selected" data-quality="fast">Fast</button>
+            <button data-quality="best">Best for light items</button>
+          </div>
         </div>
         <div class="action-buttons">
           <button class="download-all" id="download-all" disabled>DOWNLOAD ALL</button>
@@ -59,7 +66,7 @@
         </div>
       </div>
 
-      <div class="setup-note" id="setup-note"><strong>Unlimited full-size downloads.</strong><span>Use Download All to package every ready PNG into one ZIP. Background removal runs privately on this device with no credits or export paywall. The first photo downloads a compact AI model; the studio will stop and show an error if processing exceeds two minutes.</span></div>
+      <div class="setup-note" id="setup-note"><strong>Unlimited full-size downloads.</strong><span>Use Download All to package every ready PNG into one ZIP. Choose Fast for dark, high-contrast items. Choose Best for Light Items for ivory, white, beige, silver or pastel products; its larger AI model can take up to four minutes per photo.</span></div>
     </section>
 
     <section class="workspace hidden" id="listing-panel">
@@ -99,6 +106,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=mask-components-4"></script>
+  <script type="module" src="app.js?v=quality-modes-5"></script>
 </body>
 </html>

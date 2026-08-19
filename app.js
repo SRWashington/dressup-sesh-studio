@@ -4,7 +4,7 @@ import { removeBackground } from "https://esm.sh/@imgly/background-removal@1.7.0
 const config = window.DRESSUP_CONFIG || {};
 const configured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
 const supabase = configured ? createClient(config.supabaseUrl, config.supabasePublishableKey) : null;
-const state = { photos: [], background: "white", processing: false, processedCount: 0, session: null };
+const state = { photos: [], background: "white", quality: "fast", processing: false, processedCount: 0, session: null };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -162,7 +162,7 @@ function render() {
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
 
-async function cleanAlphaMask(foregroundBlob) {
+async function cleanAlphaMask(foregroundBlob, qualityMode = "fast") {
   const image = await createImageBitmap(foregroundBlob);
   const canvas = document.createElement("canvas");
   canvas.width = image.width;
@@ -176,8 +176,8 @@ async function cleanAlphaMask(foregroundBlob) {
   const pixelCount = width * height;
   const imageData = context.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  const transparentCutoff = 96;
-  const opaqueCutoff = 224;
+  const transparentCutoff = qualityMode === "best" ? 68 : 96;
+  const opaqueCutoff = qualityMode === "best" ? 216 : 224;
   const range = opaqueCutoff - transparentCutoff;
 
   for (let index = 3; index < pixels.length; index += 4) {
@@ -193,7 +193,9 @@ async function cleanAlphaMask(foregroundBlob) {
     }
   }
 
-  const minimumComponentPixels = Math.max(900, Math.floor(pixelCount * 0.00035));
+  const minimumComponentPixels = qualityMode === "best"
+    ? Math.max(700, Math.floor(pixelCount * 0.00025))
+    : Math.max(900, Math.floor(pixelCount * 0.00035));
   const visited = new Uint8Array(pixelCount);
   const queue = new Int32Array(pixelCount);
 
@@ -288,15 +290,21 @@ async function processPhotos() {
   processablePhotos.forEach((photo) => { photo.status = "queued"; photo.statusLabel = "queued"; photo.error = ""; });
   render();
 
+  const qualityMode = state.quality;
+  const model = qualityMode === "best" ? "isnet_fp16" : "isnet_quint8";
+  const timeout = qualityMode === "best" ? 240000 : 120000;
+
   for (const [index, photo] of processablePhotos.entries()) {
     state.processedCount = index;
     photo.status = "processing";
-    photo.statusLabel = index === 0 ? "loading AI" : "processing";
+    photo.statusLabel = index === 0
+      ? (qualityMode === "best" ? "loading best-quality AI" : "loading AI")
+      : "processing";
     render();
     try {
       const transparentBlob = await withTimeout(removeBackground(photo.file, {
         device: "cpu",
-        model: "isnet_quint8",
+        model,
         output: { format: "image/png", quality: 1 },
         progress: (key, current, total) => {
           if (!key.startsWith("fetch:") || !total) return;
@@ -304,10 +312,10 @@ async function processPhotos() {
           photo.statusLabel = percent >= 100 ? "removing background" : `loading ${percent}%`;
           render();
         }
-      }), 120000);
-      photo.statusLabel = "cleaning edges";
+      }), timeout);
+      photo.statusLabel = qualityMode === "best" ? "refining light edges" : "cleaning edges";
       render();
-      const cleanedTransparentBlob = await cleanAlphaMask(transparentBlob);
+      const cleanedTransparentBlob = await cleanAlphaMask(transparentBlob, qualityMode);
       if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
       photo.resultBlob = state.background === "white"
         ? await putOnWhiteBackground(cleanedTransparentBlob)
@@ -422,6 +430,12 @@ $$('[data-background]').forEach((button) => button.addEventListener("click", () 
   state.background = button.dataset.background;
   $$('[data-background]').forEach((item) => item.classList.toggle("selected", item === button));
   render();
+}));
+
+$$('[data-quality]').forEach((button) => button.addEventListener("click", () => {
+  if (state.processing) return;
+  state.quality = button.dataset.quality;
+  $$('[data-quality]').forEach((item) => item.classList.toggle("selected", item === button));
 }));
 
 elements.authButton.addEventListener("click", async () => {
