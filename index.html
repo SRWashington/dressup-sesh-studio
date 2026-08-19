@@ -7,6 +7,11 @@
   <title>Dressup Sesh Studio</title>
   <link rel="stylesheet" href="styles.css?v=creative-studio-1">
   <link rel="stylesheet" href="auth.css?v=private-studio-1">
+  <style>
+    .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .cloud-choice>span{min-width:72px;margin-right:6px;font-size:9px;font-weight:800;letter-spacing:.15em}
+    .cloud-choice strong{padding:10px 12px;background:#eef5df;color:#466a3f;font-size:9px;letter-spacing:.1em}
+  </style>
 </head>
 <body class="auth-pending">
   <section class="login-gate" id="login-gate" aria-labelledby="login-title">
@@ -70,10 +75,9 @@
             <button class="selected" data-background="white"><i class="white-swatch"></i> White</button>
             <button data-background="transparent"><i class="transparent-swatch"></i> Transparent</button>
           </div>
-          <div class="quality-choice">
-            <span>QUALITY</span>
-            <button class="selected" data-quality="fast">Fast</button>
-            <button data-quality="best">Best for light items</button>
+          <div class="cloud-choice">
+            <span>PROCESSING</span>
+            <strong>CLOUD · FAST &amp; PHONE-FRIENDLY</strong>
           </div>
         </div>
         <div class="action-buttons">
@@ -83,7 +87,7 @@
         </div>
       </div>
 
-      <div class="setup-note" id="setup-note"><strong>Unlimited full-size downloads.</strong><span>Use Download All to package every ready PNG into one ZIP. Choose Fast for dark, high-contrast items. Choose Best for Light Items for ivory, white, beige, silver or pastel products; its larger AI model can take up to four minutes per photo.</span></div>
+      <div class="setup-note" id="setup-note"><strong>Fast cleanup without loading an AI model on your phone.</strong><span>Photos are resized before secure cloud processing, then returned as ready-to-download PNGs. Use Download All to package every finished image into one ZIP.</span></div>
     </section>
 
     <section class="workspace hidden" id="creative-panel">
