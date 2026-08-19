@@ -168,6 +168,18 @@ async function putOnWhiteBackground(foregroundBlob) {
   });
 }
 
+async function withTimeout(promise, milliseconds) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("BACKGROUND_REMOVAL_TIMEOUT")), milliseconds);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function processPhotos() {
   const processablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
   if (!processablePhotos.length || state.processing) return;
@@ -182,16 +194,17 @@ async function processPhotos() {
     photo.statusLabel = index === 0 ? "loading AI" : "processing";
     render();
     try {
-      const transparentBlob = await removeBackground(photo.file, {
-        device: navigator.gpu ? "gpu" : "cpu",
-        model: "isnet_fp16",
+      const transparentBlob = await withTimeout(removeBackground(photo.file, {
+        device: "cpu",
+        model: "isnet_quint8",
         output: { format: "image/png", quality: 1 },
         progress: (key, current, total) => {
           if (!key.startsWith("fetch:") || !total) return;
-          photo.statusLabel = `loading ${Math.min(99, Math.round((current / total) * 100))}%`;
+          const percent = Math.min(100, Math.round((current / total) * 100));
+          photo.statusLabel = percent >= 100 ? "removing background" : `loading ${percent}%`;
           render();
         }
-      });
+      }), 120000);
       if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
       photo.resultBlob = state.background === "white"
         ? await putOnWhiteBackground(transparentBlob)
@@ -202,7 +215,9 @@ async function processPhotos() {
     } catch (error) {
       photo.status = "error";
       photo.statusLabel = "try again";
-      photo.error = "Couldn’t process this photo. JPG or PNG works best.";
+      photo.error = error?.message === "BACKGROUND_REMOVAL_TIMEOUT"
+        ? "The local AI took too long. Refresh the page and try this photo again."
+        : "Couldn’t process this photo. Please refresh and try again.";
       console.error("Local background removal failed", error);
     }
     render();
