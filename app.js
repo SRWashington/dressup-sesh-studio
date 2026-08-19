@@ -42,13 +42,63 @@ function photoId(file) {
   return `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`;
 }
 
+function isHeicFile(file) {
+  return /\.(heic|heif)$/i.test(file.name) || /^image\/hei(c|f)$/i.test(file.type);
+}
+
+async function convertHeicFile(file) {
+  if (typeof window.heic2any !== "function") {
+    throw new Error("The iPhone photo converter did not load.");
+  }
+  const converted = await window.heic2any({
+    blob: file,
+    toType: "image/jpeg",
+    quality: 0.96
+  });
+  const blob = Array.isArray(converted) ? converted[0] : converted;
+  const baseName = file.name.replace(/\.(heic|heif)$/i, "") || "iphone-photo";
+  return new File([blob], `${baseName}.jpg`, {
+    type: "image/jpeg",
+    lastModified: file.lastModified
+  });
+}
+
+async function preparePhoto(photo) {
+  try {
+    if (isHeicFile(photo.file)) {
+      photo.status = "converting";
+      photo.statusLabel = "preparing iPhone photo";
+      render();
+      photo.file = await convertHeicFile(photo.file);
+    }
+    photo.preview = URL.createObjectURL(photo.file);
+    photo.status = "ready";
+    photo.statusLabel = "ready";
+  } catch (error) {
+    photo.status = "error";
+    photo.statusLabel = "try again";
+    photo.error = "This iPhone photo couldn’t be converted. Please export it as JPEG and try again.";
+    console.error("HEIC conversion failed", error);
+  }
+  render();
+}
+
 function addFiles(fileList) {
   const incoming = [...fileList].filter((file) => file.type.startsWith("image/") || /\.hei(c|f)$/i.test(file.name));
   const remaining = Math.max(0, 20 - state.photos.length);
-  state.photos.push(...incoming.slice(0, remaining).map((file) => ({
-    id: photoId(file), file, preview: URL.createObjectURL(file), status: "ready", resultUrl: "", error: ""
-  })));
+  const additions = incoming.slice(0, remaining).map((file) => ({
+    id: photoId(file),
+    originalFile: file,
+    file,
+    preview: "",
+    status: isHeicFile(file) ? "converting" : "preparing",
+    statusLabel: isHeicFile(file) ? "preparing iPhone photo" : "preparing",
+    resultUrl: "",
+    error: ""
+  }));
+  state.photos.push(...additions);
   render();
+  additions.forEach((photo) => { void preparePhoto(photo); });
 }
 
 function removePhoto(id) {
@@ -63,24 +113,30 @@ function removePhoto(id) {
 
 function render() {
   const hasPhotos = state.photos.length > 0;
+  const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  const isPreparing = state.photos.some((photo) => photo.status === "converting" || photo.status === "preparing");
   elements.grid.classList.toggle("hidden", !hasPhotos);
   elements.actionBar.classList.toggle("hidden", !hasPhotos);
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
-  elements.process.disabled = !hasPhotos || state.processing;
+  elements.process.disabled = !usablePhotos.length || state.processing || isPreparing;
   elements.process.textContent = state.processing
-    ? `PROCESSING ${state.processedCount + 1} OF ${state.photos.length}…`
-    : `REMOVE BACKGROUNDS · ${state.photos.length}`;
+    ? `PROCESSING ${state.processedCount + 1} OF ${usablePhotos.length}…`
+    : isPreparing
+      ? "PREPARING IPHONE PHOTOS…"
+      : `REMOVE BACKGROUNDS · ${usablePhotos.length}`;
   elements.emptyListing.classList.toggle("hidden", hasPhotos);
   elements.listingLayout.classList.toggle("hidden", !hasPhotos);
-  elements.listingButton.disabled = !configured || !state.session || !hasPhotos;
+  elements.listingButton.disabled = !configured || !state.session || !usablePhotos.length || isPreparing;
   elements.listingNote.classList.toggle("hidden", configured && Boolean(state.session));
   elements.listingNote.textContent = configured ? "Sign in to activate listing generation." : "Connect Supabase to activate listing generation.";
 
   elements.grid.innerHTML = state.photos.map((photo, index) => `
     <article class="photo-card">
       <div class="photo-frame ${state.background === "transparent" ? "checker" : ""}">
-        <img src="${photo.resultUrl || photo.preview}" alt="Uploaded product view ${index + 1}">
+        ${photo.resultUrl || photo.preview
+          ? `<img src="${photo.resultUrl || photo.preview}" alt="Uploaded product view ${index + 1}">`
+          : `<div class="photo-preparing">Preparing<br>iPhone photo…</div>`}
         <span class="photo-status ${photo.status}">${photo.statusLabel || photo.status}</span>
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
@@ -89,9 +145,9 @@ function render() {
       ${photo.error ? `<p class="error-text">${photo.error}</p>` : ""}
     </article>`).join("") + (state.photos.length < 20 ? `<button class="add-card" id="add-more"><span>＋</span>Add more</button>` : "");
 
-  elements.sourceStrip.innerHTML = state.photos.slice(0, 6).map((photo, index) =>
+  elements.sourceStrip.innerHTML = usablePhotos.slice(0, 6).map((photo, index) =>
     `<img src="${photo.preview}" alt="Listing source ${index + 1}">`).join("") +
-    (state.photos.length > 6 ? `<span>+${state.photos.length - 6}</span>` : "");
+    (usablePhotos.length > 6 ? `<span>+${usablePhotos.length - 6}</span>` : "");
 
   $$('[data-remove]').forEach((button) => button.addEventListener("click", () => removePhoto(button.dataset.remove)));
   $("#add-more")?.addEventListener("click", () => elements.input.click());
@@ -113,13 +169,14 @@ async function putOnWhiteBackground(foregroundBlob) {
 }
 
 async function processPhotos() {
-  if (!state.photos.length || state.processing) return;
+  const processablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  if (!processablePhotos.length || state.processing) return;
   state.processing = true;
   state.processedCount = 0;
-  state.photos.forEach((photo) => { photo.status = "queued"; photo.statusLabel = "queued"; photo.error = ""; });
+  processablePhotos.forEach((photo) => { photo.status = "queued"; photo.statusLabel = "queued"; photo.error = ""; });
   render();
 
-  for (const [index, photo] of state.photos.entries()) {
+  for (const [index, photo] of processablePhotos.entries()) {
     state.processedCount = index;
     photo.status = "processing";
     photo.statusLabel = index === 0 ? "loading AI" : "processing";
@@ -164,7 +221,7 @@ async function createListing() {
   elements.listingButton.disabled = true;
   elements.listingButton.textContent = "WRITING LISTING…";
   const body = new FormData();
-  state.photos.forEach((photo, index) => {
+  state.photos.filter((photo) => photo.preview && !photo.error).forEach((photo, index) => {
     const source = photo.resultBlob || photo.file;
     const name = photo.resultBlob ? `clean-photo-${index + 1}.png` : photo.file.name;
     body.append("images", source, name);
