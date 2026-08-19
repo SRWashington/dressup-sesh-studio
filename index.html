@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=download-all-4">
   <link rel="stylesheet" href="auth.css">
 </head>
 <body>
@@ -53,10 +53,13 @@
           <button class="selected" data-background="white"><i class="white-swatch"></i> White</button>
           <button data-background="transparent"><i class="transparent-swatch"></i> Transparent</button>
         </div>
-        <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
+        <div class="action-buttons">
+          <button class="download-all" id="download-all" disabled>DOWNLOAD ALL</button>
+          <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
+        </div>
       </div>
 
-      <div class="setup-note" id="setup-note"><strong>Unlimited full-size downloads.</strong><span>Background removal runs privately on this device with no credits or export paywall. The first photo downloads a compact AI model; the studio will stop and show an error if processing exceeds two minutes.</span></div>
+      <div class="setup-note" id="setup-note"><strong>Unlimited full-size downloads.</strong><span>Use Download All to package every ready PNG into one ZIP. Background removal runs privately on this device with no credits or export paywall. The first photo downloads a compact AI model; the studio will stop and show an error if processing exceeds two minutes.</span></div>
     </section>
 
     <section class="workspace hidden" id="listing-panel">
@@ -93,8 +96,9 @@
     <button class="secondary wide" id="signup-button">CREATE OWNER ACCOUNT</button>
     <p class="auth-message" id="auth-message"></p>
   </dialog>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=crisp-edges-3"></script>
+  <script type="module" src="app.js?v=mask-components-4"></script>
 </body>
 </html>

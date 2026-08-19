@@ -10,7 +10,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const elements = {
   input: $("#file-input"), dropzone: $("#dropzone"), grid: $("#photo-grid"),
-  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"),
+  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"),
   setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"),
   emptyListing: $("#empty-listing"), listingLayout: $("#listing-layout"), sourceStrip: $("#source-strip"),
   listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingOutput: $("#listing-output"),
@@ -40,6 +40,12 @@ if (supabase) {
 
 function photoId(file) {
   return `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`;
+}
+
+function resultFileName(photo, index) {
+  const originalName = photo.originalFile?.name || photo.file.name || `photo-${index + 1}`;
+  const baseName = originalName.replace(/\.[^.]+$/, "").replace(/[^a-z0-9._-]+/gi, "-").replace(/^-|-$/g, "");
+  return `clean-${String(index + 1).padStart(2, "0")}-${baseName || "photo"}.png`;
 }
 
 function isHeicFile(file) {
@@ -119,7 +125,10 @@ function render() {
   elements.actionBar.classList.toggle("hidden", !hasPhotos);
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
+  const completedPhotos = state.photos.filter((photo) => photo.resultBlob);
   elements.process.disabled = !usablePhotos.length || state.processing || isPreparing;
+  elements.downloadAll.disabled = !completedPhotos.length || state.processing;
+  elements.downloadAll.textContent = completedPhotos.length ? `DOWNLOAD ALL · ${completedPhotos.length}` : "DOWNLOAD ALL";
   elements.process.textContent = state.processing
     ? `PROCESSING ${state.processedCount + 1} OF ${usablePhotos.length}…`
     : isPreparing
@@ -141,7 +150,7 @@ function render() {
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
       <div class="photo-meta"><strong>PHOTO ${String(index + 1).padStart(2, "0")}</strong>
-      ${photo.resultUrl ? `<a href="${photo.resultUrl}" download="clean-${photo.file.name.replace(/\.[^.]+$/, ".png")}">DOWNLOAD</a>` : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
+      ${photo.resultUrl ? `<a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a>` : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
       ${photo.error ? `<p class="error-text">${photo.error}</p>` : ""}
     </article>`).join("") + (state.photos.length < 20 ? `<button class="add-card" id="add-more"><span>＋</span>Add more</button>` : "");
 
@@ -162,10 +171,13 @@ async function cleanAlphaMask(foregroundBlob) {
   context.drawImage(image, 0, 0);
   image.close();
 
-  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const width = canvas.width;
+  const height = canvas.height;
+  const pixelCount = width * height;
+  const imageData = context.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  const transparentCutoff = 48;
-  const opaqueCutoff = 210;
+  const transparentCutoff = 96;
+  const opaqueCutoff = 224;
   const range = opaqueCutoff - transparentCutoff;
 
   for (let index = 3; index < pixels.length; index += 4) {
@@ -178,6 +190,60 @@ async function cleanAlphaMask(foregroundBlob) {
       const normalized = (alpha - transparentCutoff) / range;
       const contrasted = normalized * normalized * (3 - (2 * normalized));
       pixels[index] = Math.round(contrasted * 255);
+    }
+  }
+
+  const minimumComponentPixels = Math.max(900, Math.floor(pixelCount * 0.00035));
+  const visited = new Uint8Array(pixelCount);
+  const queue = new Int32Array(pixelCount);
+
+  for (let start = 0; start < pixelCount; start += 1) {
+    if (visited[start] || pixels[(start * 4) + 3] === 0) continue;
+
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = start;
+    visited[start] = 1;
+
+    while (head < tail) {
+      const current = queue[head++];
+      const x = current % width;
+      let neighbor;
+
+      if (x > 0) {
+        neighbor = current - 1;
+        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      }
+      if (x < width - 1) {
+        neighbor = current + 1;
+        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      }
+      if (current >= width) {
+        neighbor = current - width;
+        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      }
+      if (current < pixelCount - width) {
+        neighbor = current + width;
+        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      }
+    }
+
+    if (tail < minimumComponentPixels) {
+      for (let index = 0; index < tail; index += 1) {
+        pixels[(queue[index] * 4) + 3] = 0;
+      }
     }
   }
 
@@ -264,6 +330,37 @@ async function processPhotos() {
   render();
 }
 
+async function downloadAllPhotos() {
+  const completed = state.photos
+    .map((photo, index) => ({ photo, index }))
+    .filter(({ photo }) => photo.resultBlob);
+  if (!completed.length || typeof window.JSZip !== "function") return;
+
+  elements.downloadAll.disabled = true;
+  elements.downloadAll.textContent = "PACKAGING…";
+  try {
+    const zip = new window.JSZip();
+    completed.forEach(({ photo, index }) => {
+      zip.file(resultFileName(photo, index), photo.resultBlob);
+    });
+    const zipBlob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 }
+    });
+    const url = URL.createObjectURL(zipBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "dressup-sesh-clean-photos.zip";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } finally {
+    render();
+  }
+}
+
 async function createListing() {
   if (!configured || !state.session || !state.photos.length) {
     if (!state.session) elements.authDialog.showModal();
@@ -305,6 +402,7 @@ elements.dropzone.addEventListener("dragleave", () => elements.dropzone.classLis
 elements.dropzone.addEventListener("drop", (event) => { event.preventDefault(); elements.dropzone.classList.remove("dragging"); addFiles(event.dataTransfer.files); });
 elements.input.addEventListener("change", () => { addFiles(elements.input.files); elements.input.value = ""; });
 elements.process.addEventListener("click", processPhotos);
+elements.downloadAll.addEventListener("click", downloadAllPhotos);
 elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.copyButton.addEventListener("click", async () => {
