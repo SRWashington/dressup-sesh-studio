@@ -427,6 +427,17 @@ function selectListingPhotos(photos, maximum = 8) {
   });
 }
 
+function cleanListingText(value = "") {
+  return String(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\*/g, "")
+    .replace(/^[ \t]*Title[ \t]*:[ \t]*/gim, "")
+    .replace(/^[ \t]*Description[ \t]*:[ \t]*/gim, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function createListing() {
   if (!configured || !state.session || !state.photos.length) {
     if (!state.session) elements.authDialog.showModal();
@@ -456,10 +467,11 @@ async function createListing() {
       throw new Error(problem.error || "The listing could not be generated. Please try again.");
     }
     const data = await response.json();
-    elements.listingOutput.textContent = data.listing || "";
+    const listing = cleanListingText(data.listing);
+    elements.listingOutput.textContent = listing;
     elements.listingOutput.classList.remove("hidden");
     elements.outputPlaceholder.classList.add("hidden");
-    elements.copyButton.disabled = !data.listing;
+    elements.copyButton.disabled = !listing;
   } catch (error) {
     elements.listingError.textContent = error?.message || "The listing could not be generated. Please try again.";
     elements.listingError.classList.remove("hidden");
