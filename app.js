@@ -369,6 +369,37 @@ async function downloadAllPhotos() {
   }
 }
 
+async function prepareListingImage(source) {
+  const image = await createImageBitmap(source);
+  const maxDimension = 1800;
+  const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  image.close();
+
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error("Could not prepare this photo for listing analysis.")),
+      "image/jpeg",
+      0.84
+    );
+  });
+}
+
+function selectListingPhotos(photos, maximum = 8) {
+  if (photos.length <= maximum) return photos;
+  const lastIndex = photos.length - 1;
+  return Array.from({ length: maximum }, (_, index) => {
+    const sourceIndex = Math.round((index * lastIndex) / (maximum - 1));
+    return photos[sourceIndex];
+  });
+}
+
 async function createListing() {
   if (!configured || !state.session || !state.photos.length) {
     if (!state.session) elements.authDialog.showModal();
@@ -378,13 +409,17 @@ async function createListing() {
   elements.listingButton.disabled = true;
   elements.listingButton.textContent = "WRITING LISTING…";
   const body = new FormData();
-  state.photos.filter((photo) => photo.preview && !photo.error).forEach((photo, index) => {
-    const source = photo.resultBlob || photo.file;
-    const name = photo.resultBlob ? `clean-photo-${index + 1}.png` : photo.file.name;
-    body.append("images", source, name);
-  });
+  const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  const selectedPhotos = selectListingPhotos(usablePhotos);
   try {
-      const response = await fetch(`${config.supabaseUrl}/functions/v1/create-listing`, {
+    for (const [index, photo] of selectedPhotos.entries()) {
+      elements.listingButton.textContent = `PREPARING ${index + 1} OF ${selectedPhotos.length}…`;
+      const source = photo.resultBlob || photo.file;
+      const compactImage = await prepareListingImage(source);
+      body.append("images", compactImage, `listing-photo-${index + 1}.jpg`);
+    }
+    elements.listingButton.textContent = "WRITING LISTING…";
+    const response = await fetch(`${config.supabaseUrl}/functions/v1/create-listing`, {
         method: "POST",
         headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${state.session.access_token}` },
       body
