@@ -8,6 +8,7 @@ const state = {
   background: "white",
   processing: false,
   processedCount: 0,
+  processingTotal: 0,
   session: null,
   creativeType: "on_body",
   creativeReference: null,
@@ -214,21 +215,24 @@ function clearAllPhotos() {
 function render() {
   const hasPhotos = state.photos.length > 0;
   const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  const pendingCleanupPhotos = usablePhotos.filter((photo) => !photo.resultBlob);
   const isPreparing = state.photos.some((photo) => photo.status === "converting" || photo.status === "preparing");
   elements.grid.classList.toggle("hidden", !hasPhotos);
   elements.actionBar.classList.toggle("hidden", !hasPhotos);
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
   const completedPhotos = state.photos.filter((photo) => photo.resultBlob);
-  elements.process.disabled = !configured || !state.session || !usablePhotos.length || state.processing || isPreparing;
+  elements.process.disabled = !configured || !state.session || !pendingCleanupPhotos.length || state.processing || isPreparing;
   elements.downloadAll.disabled = !completedPhotos.length || state.processing;
   elements.clearAll.disabled = state.processing || state.creativeGenerating;
   elements.downloadAll.textContent = completedPhotos.length ? `DOWNLOAD ALL · ${completedPhotos.length}` : "DOWNLOAD ALL";
   elements.process.textContent = state.processing
-    ? `PROCESSING ${state.processedCount + 1} OF ${usablePhotos.length}…`
+    ? `PROCESSING ${state.processedCount + 1} OF ${state.processingTotal}…`
     : isPreparing
       ? "PREPARING IPHONE PHOTOS…"
-      : `REMOVE BACKGROUNDS · ${usablePhotos.length}`;
+      : pendingCleanupPhotos.length
+        ? `REMOVE BACKGROUNDS · ${pendingCleanupPhotos.length}`
+        : "ALL PHOTOS READY";
   elements.emptyListing.classList.toggle("hidden", hasPhotos);
   elements.listingLayout.classList.toggle("hidden", !hasPhotos);
   elements.listingButton.disabled = !configured || !state.session || !usablePhotos.length || isPreparing;
@@ -329,10 +333,11 @@ async function removeBackgroundInCloud(photo) {
 }
 
 async function processPhotos() {
-  const processablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  const processablePhotos = state.photos.filter((photo) => photo.preview && !photo.error && !photo.resultBlob);
   if (!processablePhotos.length || state.processing) return;
   state.processing = true;
   state.processedCount = 0;
+  state.processingTotal = processablePhotos.length;
   processablePhotos.forEach((photo) => { photo.status = "queued"; photo.statusLabel = "queued"; photo.error = ""; });
   render();
 
@@ -364,6 +369,7 @@ async function processPhotos() {
   }
   state.processing = false;
   state.processedCount = 0;
+  state.processingTotal = 0;
   render();
 }
 
@@ -605,7 +611,16 @@ elements.creativeReference.addEventListener("change", async () => {
 });
 
 $$('[data-background]').forEach((button) => button.addEventListener("click", () => {
+  if (state.processing || state.background === button.dataset.background) return;
   state.background = button.dataset.background;
+  state.photos.forEach((photo) => {
+    if (!photo.resultBlob) return;
+    if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
+    photo.resultBlob = null;
+    photo.resultUrl = "";
+    photo.status = "ready";
+    photo.statusLabel = "ready";
+  });
   $$('[data-background]').forEach((item) => item.classList.toggle("selected", item === button));
   render();
 }));
