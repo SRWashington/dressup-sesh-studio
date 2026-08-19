@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { removeBackground } from "https://esm.sh/@imgly/background-removal@1.7.0?deps=onnxruntime-web@1.21.0";
 
 const config = window.DRESSUP_CONFIG || {};
 const configured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
 const supabase = configured ? createClient(config.supabaseUrl, config.supabasePublishableKey) : null;
-const state = { photos: [], background: "white", processing: false, session: null };
+const state = { photos: [], background: "white", processing: false, processedCount: 0, session: null };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -20,8 +21,7 @@ const elements = {
 
 if (configured) {
   $("#connection-pill").classList.add("online");
-  $("#connection-copy").textContent = "Backend connected";
-  elements.setupNote.classList.add("hidden");
+  $("#connection-copy").textContent = "Listing connection ready";
 }
 
 async function refreshSession(session) {
@@ -67,8 +67,10 @@ function render() {
   elements.actionBar.classList.toggle("hidden", !hasPhotos);
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
-  elements.process.disabled = !configured || !state.session || state.processing;
-  elements.process.textContent = state.processing ? "PROCESSING…" : `REMOVE BACKGROUNDS · ${state.photos.length}`;
+  elements.process.disabled = !hasPhotos || state.processing;
+  elements.process.textContent = state.processing
+    ? `PROCESSING ${state.processedCount + 1} OF ${state.photos.length}…`
+    : `REMOVE BACKGROUNDS · ${state.photos.length}`;
   elements.emptyListing.classList.toggle("hidden", hasPhotos);
   elements.listingLayout.classList.toggle("hidden", !hasPhotos);
   elements.listingButton.disabled = !configured || !state.session || !hasPhotos;
@@ -79,12 +81,12 @@ function render() {
     <article class="photo-card">
       <div class="photo-frame ${state.background === "transparent" ? "checker" : ""}">
         <img src="${photo.resultUrl || photo.preview}" alt="Uploaded product view ${index + 1}">
-        <span class="photo-status ${photo.status}">${photo.status}</span>
+        <span class="photo-status ${photo.status}">${photo.statusLabel || photo.status}</span>
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
       <div class="photo-meta"><strong>PHOTO ${String(index + 1).padStart(2, "0")}</strong>
       ${photo.resultUrl ? `<a href="${photo.resultUrl}" download="clean-${photo.file.name.replace(/\.[^.]+$/, ".png")}">DOWNLOAD</a>` : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
-      ${photo.error ? `<p class="error-text">Couldn’t process this photo.</p>` : ""}
+      ${photo.error ? `<p class="error-text">${photo.error}</p>` : ""}
     </article>`).join("") + (state.photos.length < 20 ? `<button class="add-card" id="add-more"><span>＋</span>Add more</button>` : "");
 
   elements.sourceStrip.innerHTML = state.photos.slice(0, 6).map((photo, index) =>
@@ -95,36 +97,61 @@ function render() {
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
 
+async function putOnWhiteBackground(foregroundBlob) {
+  const image = await createImageBitmap(foregroundBlob);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0);
+  image.close();
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not create the white-background image.")), "image/png", 1);
+  });
+}
+
 async function processPhotos() {
-  if (!configured || !state.session || !state.photos.length || state.processing) {
-    if (!state.session) elements.authDialog.showModal();
-    return;
-  }
+  if (!state.photos.length || state.processing) return;
   state.processing = true;
-  state.photos.forEach((photo) => { photo.status = "processing"; photo.error = ""; });
+  state.processedCount = 0;
+  state.photos.forEach((photo) => { photo.status = "queued"; photo.statusLabel = "queued"; photo.error = ""; });
   render();
-  await Promise.all(state.photos.map(async (photo) => {
+
+  for (const [index, photo] of state.photos.entries()) {
+    state.processedCount = index;
+    photo.status = "processing";
+    photo.statusLabel = index === 0 ? "loading AI" : "processing";
+    render();
     try {
-      const body = new FormData();
-      body.append("image", photo.file, photo.file.name);
-      body.append("background", state.background);
-      const response = await fetch(`${config.supabaseUrl}/functions/v1/remove-background`, {
-        method: "POST",
-        headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${state.session.access_token}` },
-        body
+      const transparentBlob = await removeBackground(photo.file, {
+        device: navigator.gpu ? "gpu" : "cpu",
+        model: "isnet_fp16",
+        output: { format: "image/png", quality: 1 },
+        progress: (key, current, total) => {
+          if (!key.startsWith("fetch:") || !total) return;
+          photo.statusLabel = `loading ${Math.min(99, Math.round((current / total) * 100))}%`;
+          render();
+        }
       });
-      if (!response.ok) throw new Error(await response.text());
       if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
-      photo.resultBlob = await response.blob();
+      photo.resultBlob = state.background === "white"
+        ? await putOnWhiteBackground(transparentBlob)
+        : transparentBlob;
       photo.resultUrl = URL.createObjectURL(photo.resultBlob);
       photo.status = "complete";
+      photo.statusLabel = "ready";
     } catch (error) {
       photo.status = "error";
-      photo.error = error instanceof Error ? error.message : "Processing failed";
+      photo.statusLabel = "try again";
+      photo.error = "Couldn’t process this photo. JPG or PNG works best.";
+      console.error("Local background removal failed", error);
     }
     render();
-  }));
+  }
   state.processing = false;
+  state.processedCount = 0;
   render();
 }
 
