@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
+  <title>Dressup Sesh Studio</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell" id="top">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Dressup Sesh Studio home">
+        <span class="brand-mark">DS</span>
+        <span><strong>DRESSUP SESH</strong><small>LISTING STUDIO</small></span>
+      </a>
+      <span class="connection-pill" id="connection-pill"><span class="status-dot"></span><span id="connection-copy">Setup required</span></span>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">THE FAST TRACK FROM CAMERA ROLL TO CLOSET</p>
+      <h1>Clean photos. Sharp copy.<br>Ready to list.</h1>
+      <p class="lede">Upload a full product set once. Get every photo back separately—plus a copy-ready Poshmark title and description in your exact format.</p>
+    </section>
+
+    <nav class="mode-tabs" aria-label="Studio mode">
+      <button class="active" data-tab="photos">01 · PHOTO CLEANUP</button>
+      <button data-tab="listing">02 · LISTING COPY</button>
+    </nav>
+
+    <section class="workspace" id="photos-panel">
+      <div class="workspace-head">
+        <div><p class="step">STEP 01</p><h2>Add your product photos</h2><p>JPG, PNG or HEIC · Up to 20 photos per item</p></div>
+        <span class="count hidden" id="photo-count"></span>
+      </div>
+
+      <div class="dropzone" id="dropzone" role="button" tabindex="0">
+        <input id="file-input" type="file" accept="image/*,.heic,.heif" multiple hidden>
+        <span class="upload-icon">＋</span>
+        <strong>Drop your photos here</strong>
+        <span>or click to choose from your device</span>
+      </div>
+
+      <div class="photo-grid hidden" id="photo-grid"></div>
+
+      <div class="action-bar hidden" id="action-bar">
+        <div class="background-choice">
+          <span>BACKGROUND</span>
+          <button class="selected" data-background="white"><i class="white-swatch"></i> White</button>
+          <button data-background="transparent"><i class="transparent-swatch"></i> Transparent</button>
+        </div>
+        <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
+      </div>
+
+      <div class="setup-note" id="setup-note"><strong>Interface ready for connection.</strong><span>The secure Supabase processor needs to be connected before photo processing goes live.</span></div>
+    </section>
+
+    <section class="workspace hidden" id="listing-panel">
+      <div class="workspace-head"><div><p class="step">STEP 02</p><h2>Create the Poshmark listing</h2><p>The same uploaded photos become your copy-ready title and description.</p></div></div>
+      <button class="empty-listing" id="empty-listing"><span>＋</span><strong>Add product photos first</strong><small>Upload once, then return here for the listing.</small></button>
+      <div class="listing-layout hidden" id="listing-layout">
+        <div class="listing-source">
+          <p class="step">SOURCE PHOTOS</p>
+          <div class="source-strip" id="source-strip"></div>
+          <button class="primary wide" id="listing-button" disabled>CREATE TITLE + DESCRIPTION</button>
+          <p class="microcopy" id="listing-note">Connect Supabase to activate listing generation.</p>
+        </div>
+        <div class="listing-output">
+          <div class="output-head"><span>COPY-READY OUTPUT</span><button id="copy-button" disabled>COPY ALL</button></div>
+          <div class="output-placeholder" id="output-placeholder"><span>DS</span><p>Your exact <strong>Title + Description</strong> format will appear here—nothing extra.</p></div>
+          <pre class="hidden" id="listing-output"></pre>
+          <p class="error-text hidden" id="listing-error">The listing could not be generated. Please try again.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer><span>DRESSUP SESH STUDIO</span><span>ONE ITEM IN · READY TO SELL OUT</span></footer>
+  </main>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
