@@ -16,7 +16,8 @@ const elements = {
   listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingOutput: $("#listing-output"),
   outputPlaceholder: $("#output-placeholder"), listingError: $("#listing-error"), copyButton: $("#copy-button"),
   authButton: $("#auth-button"), authDialog: $("#auth-dialog"), authForm: $("#auth-form"),
-  authEmail: $("#auth-email"), authPassword: $("#auth-password"), authMessage: $("#auth-message")
+  authEmail: $("#auth-email"), authPassword: $("#auth-password"), authMessage: $("#auth-message"),
+  loginGate: $("#login-gate"), gateSignIn: $("#gate-signin"), gateMessage: $("#gate-message")
 };
 
 if (configured) {
@@ -24,18 +25,44 @@ if (configured) {
   $("#connection-copy").textContent = "Listing connection ready";
 }
 
+async function verifyOwnerSession(session) {
+  if (!configured || !session) return false;
+  try {
+    const response = await fetch(`${config.supabaseUrl}/functions/v1/create-listing`, {
+      method: "GET",
+      headers: {
+        apikey: config.supabasePublishableKey,
+        Authorization: `Bearer ${session.access_token}`
+      }
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function refreshSession(session) {
-  state.session = session;
-  elements.authButton.textContent = session ? "SIGN OUT" : "SIGN IN";
-  elements.authButton.classList.toggle("signed-in", Boolean(session));
-  if (configured) $("#connection-copy").textContent = session ? "Studio ready" : "Sign in required";
+  document.body.classList.add("auth-pending");
+  const isOwner = await verifyOwnerSession(session);
+  state.session = isOwner ? session : null;
+  const locked = !state.session;
+  document.body.classList.toggle("studio-locked", locked);
+  document.body.classList.remove("auth-pending");
+  elements.authButton.textContent = state.session ? "SIGN OUT" : "SIGN IN";
+  elements.authButton.classList.toggle("signed-in", Boolean(state.session));
+  elements.gateMessage.textContent = session && !isOwner
+    ? "This account is not authorized for the private studio."
+    : "Sign in with the owner email to continue.";
+  if (configured) $("#connection-copy").textContent = state.session ? "Studio ready" : "Sign in required";
   render();
 }
 
 if (supabase) {
   const { data } = await supabase.auth.getSession();
   await refreshSession(data.session);
-  supabase.auth.onAuthStateChange((_event, session) => refreshSession(session));
+  supabase.auth.onAuthStateChange((_event, session) => { void refreshSession(session); });
+} else {
+  await refreshSession(null);
 }
 
 function photoId(file) {
@@ -424,13 +451,17 @@ async function createListing() {
         headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${state.session.access_token}` },
       body
     });
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({}));
+      throw new Error(problem.error || "The listing could not be generated. Please try again.");
+    }
     const data = await response.json();
     elements.listingOutput.textContent = data.listing || "";
     elements.listingOutput.classList.remove("hidden");
     elements.outputPlaceholder.classList.add("hidden");
     elements.copyButton.disabled = !data.listing;
-  } catch {
+  } catch (error) {
+    elements.listingError.textContent = error?.message || "The listing could not be generated. Please try again.";
     elements.listingError.classList.remove("hidden");
   } finally {
     elements.listingButton.disabled = false;
@@ -472,6 +503,11 @@ $$('[data-quality]').forEach((button) => button.addEventListener("click", () => 
   state.quality = button.dataset.quality;
   $$('[data-quality]').forEach((item) => item.classList.toggle("selected", item === button));
 }));
+
+elements.gateSignIn.addEventListener("click", () => {
+  elements.authMessage.textContent = "";
+  elements.authDialog.showModal();
+});
 
 elements.authButton.addEventListener("click", async () => {
   if (state.session && supabase) {
