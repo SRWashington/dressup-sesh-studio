@@ -27,6 +27,7 @@ Study every supplied photo as one product. Return ONLY a finished listing in thi
 
 Rules:
 - Begin with **Title:** and end immediately after original retail.
+- Keep the title on one line.
 - Never add introductions, explanations, notes, questions, confidence, product ID, key details, pricing advice, suggested listing price, photo recommendations, checklists, bullets, tables or READY TO POST.
 - Never invent a brand, model, material, size, measurement or country.
 - Read labels and measurement photos carefully. Omit facts that cannot be verified or reasonably inferred.
@@ -62,7 +63,7 @@ Deno.serve(async (request: Request) => {
     const content: Array<Record<string, unknown>> = [{ type: "input_text", text: prompt }];
     for (const image of images) {
       if (!/^(image\/png|image\/jpeg|image\/webp|image\/gif)$/i.test(image.type)) {
-        return new Response(JSON.stringify({ error: "Process HEIC photos first so listing analysis can use the PNG results." }), { status: 415, headers: { ...cors, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: "Process HEIC photos first so listing analysis can use the JPEG results." }), { status: 415, headers: { ...cors, "Content-Type": "application/json" } });
       }
       if (image.size > 12 * 1024 * 1024) {
         return new Response(JSON.stringify({ error: "Each image must be 12 MB or smaller." }), { status: 413, headers: { ...cors, "Content-Type": "application/json" } });
@@ -75,7 +76,10 @@ Deno.serve(async (request: Request) => {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-5.6",
+        model: "gpt-5.6-terra",
+        store: false,
+        reasoning: { effort: "low" },
+        max_output_tokens: 1400,
         input: [{ role: "user", content }],
         text: {
           format: {
