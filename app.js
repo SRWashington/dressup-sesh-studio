@@ -29,7 +29,7 @@ const elements = {
   count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), clearAll: $("#clear-all"),
   setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"), creativePanel: $("#creative-panel"),
   emptyListing: $("#empty-listing"), listingLayout: $("#listing-layout"), sourceStrip: $("#source-strip"),
-  listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingOutput: $("#listing-output"),
+  listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingAdditional: $("#listing-additional-info"), listingOutput: $("#listing-output"),
   outputPlaceholder: $("#output-placeholder"), listingError: $("#listing-error"), copyButton: $("#copy-button"),
   authButton: $("#auth-button"), authDialog: $("#auth-dialog"), authForm: $("#auth-form"),
   authEmail: $("#auth-email"), authPassword: $("#auth-password"), authMessage: $("#auth-message"),
@@ -210,6 +210,7 @@ function clearAllPhotos() {
   resetCreativeOutput();
   elements.creativeInstructions.value = "";
   elements.listingOutput.textContent = "";
+  elements.listingAdditional.value = "";
   elements.listingOutput.classList.add("hidden");
   elements.outputPlaceholder.classList.remove("hidden");
   elements.copyButton.disabled = true;
@@ -600,6 +601,8 @@ async function createListing() {
   elements.listingButton.disabled = true;
   elements.listingButton.textContent = "WRITING LISTING…";
   const body = new FormData();
+  const additionalInfo = elements.listingAdditional.value.trim();
+  if (additionalInfo) body.append("additional_info", additionalInfo);
   const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
   const selectedPhotos = selectListingPhotos(usablePhotos);
   try {
