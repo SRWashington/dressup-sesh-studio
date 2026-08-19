@@ -272,6 +272,10 @@ function canvasToJpeg(canvas, quality) {
   });
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function prepareBackgroundImage(source) {
   const image = await createImageBitmap(source);
   let maxDimension = 1600;
@@ -351,6 +355,12 @@ async function processPhotos() {
       console.error("Cloud background removal failed", error);
     }
     render();
+    if (index < processablePhotos.length - 1) {
+      const nextPhoto = processablePhotos[index + 1];
+      nextPhoto.statusLabel = "waiting for cloud slot";
+      render();
+      await wait(10500);
+    }
   }
   state.processing = false;
   state.processedCount = 0;
