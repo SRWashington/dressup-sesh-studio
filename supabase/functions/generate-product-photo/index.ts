@@ -88,7 +88,6 @@ Deno.serve(async (request: Request) => {
     images.forEach((image, index) => upstream.append("image[]", image, `product-${index + 1}.jpg`));
     if (reference) upstream.append("image[]", reference, "inspiration-reference.jpg");
     upstream.append("prompt", buildPrompt(type, images.length, Boolean(reference), instructions));
-    upstream.append("input_fidelity", "high");
     upstream.append("quality", "medium");
     upstream.append("size", creative.size);
     upstream.append("background", "opaque");
@@ -106,6 +105,10 @@ Deno.serve(async (request: Request) => {
     if (!response.ok) {
       console.error("OpenAI image error", response.status, JSON.stringify(payload).slice(0, 1200));
       const errorCode = String(payload?.error?.code || "");
+      const upstreamMessage = String(payload?.error?.message || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 240);
       const billingCodes = new Set([
         "credit_balance_exhausted",
         "organization_spend_limit_exceeded",
@@ -120,6 +123,8 @@ Deno.serve(async (request: Request) => {
             ? "The OpenAI API key was rejected. Replace OPENAI_API_KEY in Supabase and try again."
             : response.status === 403
               ? "OpenAI image access may require organization verification in the API dashboard."
+              : response.status === 400 && upstreamMessage
+                ? `OpenAI rejected an image setting: ${upstreamMessage}`
               : "The creative image could not be generated. Please try again.";
       return json({ error: message, code: errorCode || undefined }, response.status, cors);
     }
