@@ -19,12 +19,15 @@ export async function requireOwner(request: Request) {
   if (!authorization?.startsWith("Bearer ")) throw new Error("UNAUTHORIZED");
 
   const projectUrl = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const publishableKeys = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
+  const publishableKey = publishableKeys
+    ? JSON.parse(publishableKeys).default
+    : Deno.env.get("SUPABASE_ANON_KEY");
   const ownerEmail = Deno.env.get("OWNER_EMAIL")?.trim().toLowerCase();
-  if (!projectUrl || !anonKey || !ownerEmail) throw new Error("NOT_CONFIGURED");
+  if (!projectUrl || !publishableKey || !ownerEmail) throw new Error("NOT_CONFIGURED");
 
   const response = await fetch(`${projectUrl}/auth/v1/user`, {
-    headers: { Authorization: authorization, apikey: anonKey },
+    headers: { Authorization: authorization, apikey: publishableKey },
   });
   if (!response.ok) throw new Error("UNAUTHORIZED");
   const user = await response.json();
