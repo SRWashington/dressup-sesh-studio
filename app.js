@@ -4,20 +4,44 @@ import { removeBackground } from "https://esm.sh/@imgly/background-removal@1.7.0
 const config = window.DRESSUP_CONFIG || {};
 const configured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
 const supabase = configured ? createClient(config.supabaseUrl, config.supabasePublishableKey) : null;
-const state = { photos: [], background: "white", quality: "fast", processing: false, processedCount: 0, session: null };
+const state = {
+  photos: [],
+  background: "white",
+  quality: "fast",
+  processing: false,
+  processedCount: 0,
+  session: null,
+  creativeType: "on_body",
+  creativeReference: null,
+  creativeReferenceUrl: "",
+  creativeResultUrl: "",
+  creativeGenerating: false
+};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const elements = {
   input: $("#file-input"), dropzone: $("#dropzone"), grid: $("#photo-grid"),
-  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"),
-  setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"),
+  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), clearAll: $("#clear-all"),
+  setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"), creativePanel: $("#creative-panel"),
   emptyListing: $("#empty-listing"), listingLayout: $("#listing-layout"), sourceStrip: $("#source-strip"),
   listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingOutput: $("#listing-output"),
   outputPlaceholder: $("#output-placeholder"), listingError: $("#listing-error"), copyButton: $("#copy-button"),
   authButton: $("#auth-button"), authDialog: $("#auth-dialog"), authForm: $("#auth-form"),
   authEmail: $("#auth-email"), authPassword: $("#auth-password"), authMessage: $("#auth-message"),
-  loginGate: $("#login-gate"), gateSignIn: $("#gate-signin"), gateMessage: $("#gate-message")
+  loginGate: $("#login-gate"), gateSignIn: $("#gate-signin"), gateMessage: $("#gate-message"),
+  emptyCreative: $("#empty-creative"), creativeLayout: $("#creative-layout"), creativeSourceStrip: $("#creative-source-strip"),
+  creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
+  referenceImage: $("#reference-image"), removeReference: $("#remove-reference"), creativeInstructions: $("#creative-instructions"),
+  creativeGenerate: $("#creative-generate"), creativeOutput: $(".creative-output"), creativePlaceholder: $("#creative-placeholder"),
+  creativeOutputImage: $("#creative-output-image"), creativeDownload: $("#creative-download"), creativeError: $("#creative-error")
+};
+
+const creativeLabels = {
+  on_body: "GENERATE ON-THE-BODY PHOTO",
+  ghost: "GENERATE GHOST MANNEQUIN",
+  influencer: "GENERATE INFLUENCER POST",
+  editorial: "GENERATE EDITORIAL IMAGE"
 };
 
 if (configured) {
@@ -144,6 +168,51 @@ function removePhoto(id) {
   render();
 }
 
+function removeCreativeReference() {
+  if (state.creativeReferenceUrl) URL.revokeObjectURL(state.creativeReferenceUrl);
+  state.creativeReference = null;
+  state.creativeReferenceUrl = "";
+  elements.creativeReference.value = "";
+  elements.referenceImage.removeAttribute("src");
+  elements.referencePreview.classList.add("hidden");
+  elements.referencePicker.classList.remove("hidden");
+}
+
+function resetCreativeOutput() {
+  if (state.creativeResultUrl) URL.revokeObjectURL(state.creativeResultUrl);
+  state.creativeResultUrl = "";
+  elements.creativeOutputImage.removeAttribute("src");
+  elements.creativeOutputImage.classList.add("hidden");
+  elements.creativeDownload.removeAttribute("href");
+  elements.creativeDownload.classList.add("hidden");
+  elements.creativePlaceholder.classList.remove("hidden");
+  elements.creativeError.textContent = "";
+  elements.creativeError.classList.add("hidden");
+}
+
+function clearAllPhotos() {
+  if (!state.photos.length || state.processing || state.creativeGenerating) return;
+  if (!window.confirm("Clear this item and start a new one?")) return;
+  state.photos.forEach((photo) => {
+    if (photo.preview) URL.revokeObjectURL(photo.preview);
+    if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
+  });
+  state.photos = [];
+  state.processedCount = 0;
+  removeCreativeReference();
+  resetCreativeOutput();
+  elements.creativeInstructions.value = "";
+  elements.listingOutput.textContent = "";
+  elements.listingOutput.classList.add("hidden");
+  elements.outputPlaceholder.classList.remove("hidden");
+  elements.copyButton.disabled = true;
+  elements.listingError.classList.add("hidden");
+  elements.input.value = "";
+  $("[data-tab='photos']").click();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  render();
+}
+
 function render() {
   const hasPhotos = state.photos.length > 0;
   const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
@@ -155,6 +224,7 @@ function render() {
   const completedPhotos = state.photos.filter((photo) => photo.resultBlob);
   elements.process.disabled = !usablePhotos.length || state.processing || isPreparing;
   elements.downloadAll.disabled = !completedPhotos.length || state.processing;
+  elements.clearAll.disabled = state.processing || state.creativeGenerating;
   elements.downloadAll.textContent = completedPhotos.length ? `DOWNLOAD ALL · ${completedPhotos.length}` : "DOWNLOAD ALL";
   elements.process.textContent = state.processing
     ? `PROCESSING ${state.processedCount + 1} OF ${usablePhotos.length}…`
@@ -166,6 +236,11 @@ function render() {
   elements.listingButton.disabled = !configured || !state.session || !usablePhotos.length || isPreparing;
   elements.listingNote.classList.toggle("hidden", configured && Boolean(state.session));
   elements.listingNote.textContent = configured ? "Sign in to activate listing generation." : "Connect Supabase to activate listing generation.";
+  elements.emptyCreative.classList.toggle("hidden", hasPhotos);
+  elements.creativeLayout.classList.toggle("hidden", !hasPhotos);
+  elements.creativeGenerate.disabled = !configured || !state.session || !usablePhotos.length || isPreparing || state.creativeGenerating;
+  elements.creativeGenerate.textContent = state.creativeGenerating ? "GENERATING…" : creativeLabels[state.creativeType];
+  elements.creativeOutput.classList.toggle("generating", state.creativeGenerating);
 
   elements.grid.innerHTML = state.photos.map((photo, index) => `
     <article class="photo-card">
@@ -183,6 +258,10 @@ function render() {
 
   elements.sourceStrip.innerHTML = usablePhotos.slice(0, 6).map((photo, index) =>
     `<img src="${photo.preview}" alt="Listing source ${index + 1}">`).join("") +
+    (usablePhotos.length > 6 ? `<span>+${usablePhotos.length - 6}</span>` : "");
+
+  elements.creativeSourceStrip.innerHTML = usablePhotos.slice(0, 6).map((photo, index) =>
+    `<img src="${photo.preview}" alt="Creative product source ${index + 1}">`).join("") +
     (usablePhotos.length > 6 ? `<span>+${usablePhotos.length - 6}</span>` : "");
 
   $$('[data-remove]').forEach((button) => button.addEventListener("click", () => removePhoto(button.dataset.remove)));
@@ -536,6 +615,70 @@ async function createListing() {
   }
 }
 
+function base64ToBlob(value, mimeType = "image/jpeg") {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mimeType });
+}
+
+async function generateCreativeImage() {
+  if (!configured || !state.session || !state.photos.length || state.creativeGenerating) return;
+  const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  if (!usablePhotos.length) return;
+
+  state.creativeGenerating = true;
+  elements.creativeError.classList.add("hidden");
+  render();
+  const body = new FormData();
+  body.append("type", state.creativeType);
+  body.append("instructions", elements.creativeInstructions.value.trim());
+
+  try {
+    const selectedPhotos = selectListingPhotos(usablePhotos, 6);
+    for (const [index, photo] of selectedPhotos.entries()) {
+      elements.creativeGenerate.textContent = `PREPARING PRODUCT ${index + 1} OF ${selectedPhotos.length}…`;
+      const compactImage = await prepareListingImage(photo.file);
+      body.append("images", compactImage, `product-${index + 1}.jpg`);
+    }
+
+    if (state.creativeReference) {
+      elements.creativeGenerate.textContent = "PREPARING REFERENCE…";
+      const compactReference = await prepareListingImage(state.creativeReference);
+      body.append("reference", compactReference, "creative-reference.jpg");
+    }
+
+    elements.creativeGenerate.textContent = "GENERATING…";
+    const response = await fetch(`${config.supabaseUrl}/functions/v1/generate-product-photo`, {
+      method: "POST",
+      headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${state.session.access_token}` },
+      body
+    });
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({}));
+      throw new Error(problem.error || "The creative image could not be generated. Please try again.");
+    }
+
+    const data = await response.json();
+    if (!data.image) throw new Error("The image generator returned no image. Please try again.");
+    const blob = base64ToBlob(data.image, data.mimeType || "image/jpeg");
+    resetCreativeOutput();
+    state.creativeResultUrl = URL.createObjectURL(blob);
+    elements.creativeOutputImage.src = state.creativeResultUrl;
+    elements.creativeOutputImage.classList.remove("hidden");
+    elements.creativePlaceholder.classList.add("hidden");
+    elements.creativeDownload.href = state.creativeResultUrl;
+    elements.creativeDownload.download = `dressup-sesh-${state.creativeType.replaceAll("_", "-")}.jpg`;
+    elements.creativeDownload.classList.remove("hidden");
+  } catch (error) {
+    elements.creativeError.textContent = error?.message || "The creative image could not be generated. Please try again.";
+    elements.creativeError.classList.remove("hidden");
+  } finally {
+    state.creativeGenerating = false;
+    render();
+  }
+}
+
 elements.dropzone.addEventListener("click", () => elements.input.click());
 elements.dropzone.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") elements.input.click(); });
 elements.dropzone.addEventListener("dragover", (event) => { event.preventDefault(); elements.dropzone.classList.add("dragging"); });
@@ -544,8 +687,11 @@ elements.dropzone.addEventListener("drop", (event) => { event.preventDefault(); 
 elements.input.addEventListener("change", () => { addFiles(elements.input.files); elements.input.value = ""; });
 elements.process.addEventListener("click", processPhotos);
 elements.downloadAll.addEventListener("click", downloadAllPhotos);
+elements.clearAll.addEventListener("click", clearAllPhotos);
 elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
+elements.emptyCreative.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
+elements.creativeGenerate.addEventListener("click", generateCreativeImage);
 elements.copyButton.addEventListener("click", async () => {
   await navigator.clipboard.writeText(elements.listingOutput.textContent);
   elements.copyButton.textContent = "COPIED";
@@ -554,10 +700,41 @@ elements.copyButton.addEventListener("click", async () => {
 
 $$('[data-tab]').forEach((button) => button.addEventListener("click", () => {
   $$('[data-tab]').forEach((item) => item.classList.toggle("active", item === button));
-  const photosActive = button.dataset.tab === "photos";
-  elements.photosPanel.classList.toggle("hidden", !photosActive);
-  elements.listingPanel.classList.toggle("hidden", photosActive);
+  const activeTab = button.dataset.tab;
+  elements.photosPanel.classList.toggle("hidden", activeTab !== "photos");
+  elements.listingPanel.classList.toggle("hidden", activeTab !== "listing");
+  elements.creativePanel.classList.toggle("hidden", activeTab !== "creative");
 }));
+
+$$('[data-creative-type]').forEach((button) => button.addEventListener("click", () => {
+  if (state.creativeGenerating) return;
+  state.creativeType = button.dataset.creativeType;
+  $$('[data-creative-type]').forEach((item) => item.classList.toggle("selected", item === button));
+  resetCreativeOutput();
+  render();
+}));
+
+elements.referencePicker.addEventListener("click", () => elements.creativeReference.click());
+elements.removeReference.addEventListener("click", removeCreativeReference);
+elements.creativeReference.addEventListener("change", async () => {
+  let file = elements.creativeReference.files?.[0];
+  if (!file) return;
+  try {
+    elements.referencePicker.innerHTML = "<strong>PREPARING REFERENCE…</strong>";
+    if (isHeicFile(file)) file = await convertHeicFile(file);
+    removeCreativeReference();
+    state.creativeReference = file;
+    state.creativeReferenceUrl = URL.createObjectURL(file);
+    elements.referenceImage.src = state.creativeReferenceUrl;
+    elements.referencePicker.classList.add("hidden");
+    elements.referencePreview.classList.remove("hidden");
+  } catch (error) {
+    elements.creativeError.textContent = "That reference photo could not be prepared. Please try a JPG or PNG.";
+    elements.creativeError.classList.remove("hidden");
+  } finally {
+    elements.referencePicker.innerHTML = "<span>＋</span><strong>Add inspiration photo</strong><small>JPG, PNG, WEBP or HEIC</small>";
+  }
+});
 
 $$('[data-background]').forEach((button) => button.addEventListener("click", () => {
   state.background = button.dataset.background;
