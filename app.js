@@ -203,8 +203,28 @@ async function cleanAlphaMask(foregroundBlob, qualityMode = "fast") {
   const pixelCount = width * height;
   const imageData = context.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  const transparentCutoff = qualityMode === "best" ? 68 : 96;
-  const opaqueCutoff = qualityMode === "best" ? 216 : 224;
+  const settings = qualityMode === "best"
+    ? {
+        transparentCutoff: 54,
+        opaqueCutoff: 208,
+        contrastGamma: 1.08,
+        strongAlpha: 148,
+        supportRadius: 11,
+        minimumComponentFloor: 1600,
+        minimumComponentRatio: 0.00075,
+        softComponentAlpha: 96
+      }
+    : {
+        transparentCutoff: 108,
+        opaqueCutoff: 222,
+        contrastGamma: 1.22,
+        strongAlpha: 170,
+        supportRadius: 7,
+        minimumComponentFloor: 2200,
+        minimumComponentRatio: 0.001,
+        softComponentAlpha: 112
+      };
+  const { transparentCutoff, opaqueCutoff } = settings;
   const range = opaqueCutoff - transparentCutoff;
 
   for (let index = 3; index < pixels.length; index += 4) {
@@ -215,14 +235,58 @@ async function cleanAlphaMask(foregroundBlob, qualityMode = "fast") {
       pixels[index] = 255;
     } else {
       const normalized = (alpha - transparentCutoff) / range;
-      const contrasted = normalized * normalized * (3 - (2 * normalized));
-      pixels[index] = Math.round(contrasted * 255);
+      const smoothed = normalized * normalized * (3 - (2 * normalized));
+      pixels[index] = Math.round(Math.pow(smoothed, settings.contrastGamma) * 255);
     }
   }
 
-  const minimumComponentPixels = qualityMode === "best"
-    ? Math.max(700, Math.floor(pixelCount * 0.00025))
-    : Math.max(900, Math.floor(pixelCount * 0.00035));
+  // Keep anti-aliased product edges, but remove low-confidence mask clouds that
+  // are too far away from a strongly identified foreground pixel.
+  const unsupported = 255;
+  const distance = new Uint8Array(pixelCount);
+  distance.fill(unsupported);
+  for (let position = 0; position < pixelCount; position += 1) {
+    if (pixels[(position * 4) + 3] >= settings.strongAlpha) distance[position] = 0;
+  }
+
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+    for (let x = 0; x < width; x += 1) {
+      const position = row + x;
+      if (distance[position] === 0) continue;
+      let nearest = distance[position];
+      if (x > 0) nearest = Math.min(nearest, distance[position - 1] + 1);
+      if (y > 0) {
+        nearest = Math.min(nearest, distance[position - width] + 1);
+        if (x > 0) nearest = Math.min(nearest, distance[position - width - 1] + 1);
+        if (x < width - 1) nearest = Math.min(nearest, distance[position - width + 1] + 1);
+      }
+      distance[position] = Math.min(unsupported, nearest);
+    }
+  }
+
+  for (let y = height - 1; y >= 0; y -= 1) {
+    const row = y * width;
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const position = row + x;
+      let nearest = distance[position];
+      if (x < width - 1) nearest = Math.min(nearest, distance[position + 1] + 1);
+      if (y < height - 1) {
+        nearest = Math.min(nearest, distance[position + width] + 1);
+        if (x > 0) nearest = Math.min(nearest, distance[position + width - 1] + 1);
+        if (x < width - 1) nearest = Math.min(nearest, distance[position + width + 1] + 1);
+      }
+      distance[position] = Math.min(unsupported, nearest);
+      if (pixels[(position * 4) + 3] > 0 && distance[position] > settings.supportRadius) {
+        pixels[(position * 4) + 3] = 0;
+      }
+    }
+  }
+
+  const minimumComponentPixels = Math.max(
+    settings.minimumComponentFloor,
+    Math.floor(pixelCount * settings.minimumComponentRatio)
+  );
   const visited = new Uint8Array(pixelCount);
   const queue = new Int32Array(pixelCount);
 
@@ -231,45 +295,36 @@ async function cleanAlphaMask(foregroundBlob, qualityMode = "fast") {
 
     let head = 0;
     let tail = 0;
+    let alphaTotal = 0;
     queue[tail++] = start;
     visited[start] = 1;
 
     while (head < tail) {
       const current = queue[head++];
       const x = current % width;
-      let neighbor;
+      const y = Math.floor(current / width);
+      alphaTotal += pixels[(current * 4) + 3];
 
-      if (x > 0) {
-        neighbor = current - 1;
-        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
-          visited[neighbor] = 1;
-          queue[tail++] = neighbor;
-        }
-      }
-      if (x < width - 1) {
-        neighbor = current + 1;
-        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
-          visited[neighbor] = 1;
-          queue[tail++] = neighbor;
-        }
-      }
-      if (current >= width) {
-        neighbor = current - width;
-        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
-          visited[neighbor] = 1;
-          queue[tail++] = neighbor;
-        }
-      }
-      if (current < pixelCount - width) {
-        neighbor = current + width;
-        if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
-          visited[neighbor] = 1;
-          queue[tail++] = neighbor;
+      for (let yOffset = -1; yOffset <= 1; yOffset += 1) {
+        const neighborY = y + yOffset;
+        if (neighborY < 0 || neighborY >= height) continue;
+        for (let xOffset = -1; xOffset <= 1; xOffset += 1) {
+          if (xOffset === 0 && yOffset === 0) continue;
+          const neighborX = x + xOffset;
+          if (neighborX < 0 || neighborX >= width) continue;
+          const neighbor = (neighborY * width) + neighborX;
+          if (!visited[neighbor] && pixels[(neighbor * 4) + 3] > 0) {
+            visited[neighbor] = 1;
+            queue[tail++] = neighbor;
+          }
         }
       }
     }
 
-    if (tail < minimumComponentPixels) {
+    const averageAlpha = alphaTotal / tail;
+    const isSmall = tail < minimumComponentPixels;
+    const isSoftDebris = tail < minimumComponentPixels * 5 && averageAlpha < settings.softComponentAlpha;
+    if (isSmall || isSoftDebris) {
       for (let index = 0; index < tail; index += 1) {
         pixels[(queue[index] * 4) + 3] = 0;
       }
