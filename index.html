@@ -6,9 +6,24 @@
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
   <link rel="stylesheet" href="styles.css?v=quality-modes-5">
-  <link rel="stylesheet" href="auth.css">
+  <link rel="stylesheet" href="auth.css?v=private-studio-1">
 </head>
-<body>
+<body class="auth-pending">
+  <section class="login-gate" id="login-gate" aria-labelledby="login-title">
+    <div class="login-card">
+      <div class="brand" aria-label="Dressup Sesh Studio">
+        <span class="brand-mark">DS</span>
+        <span><strong>DRESSUP SESH</strong><small>LISTING STUDIO</small></span>
+      </div>
+      <p class="eyebrow">PRIVATE OWNER WORKSPACE</p>
+      <h1 id="login-title">Your listing studio is locked.</h1>
+      <p>Sign in to access photo cleanup, downloads and copy-ready Poshmark listings.</p>
+      <div class="gate-actions">
+        <button class="primary" id="gate-signin">SIGN IN TO STUDIO</button>
+        <p class="gate-message" id="gate-message" aria-live="polite">Sign in with the owner email to continue.</p>
+      </div>
+    </div>
+  </section>
   <main class="app-shell" id="top">
     <header class="topbar">
       <a class="brand" href="#top" aria-label="Dressup Sesh Studio home">
@@ -94,7 +109,7 @@
     <button class="dialog-close" id="dialog-close" aria-label="Close sign-in">×</button>
     <p class="eyebrow">PRIVATE STUDIO ACCESS</p>
     <h2>Sign in to process</h2>
-    <p>Sign-in is only required for OpenAI listing copy. Photo cleanup and downloads remain free without signing in.</p>
+    <p>Sign in with the owner email to access photo cleanup, downloads and OpenAI listing copy.</p>
     <form id="auth-form">
       <label>Email<input id="auth-email" type="email" autocomplete="email" required></label>
       <label>Password<input id="auth-password" type="password" autocomplete="current-password" minlength="8" required></label>
@@ -106,6 +121,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=listing-compression-1"></script>
+  <script type="module" src="app.js?v=private-studio-1"></script>
 </body>
 </html>
