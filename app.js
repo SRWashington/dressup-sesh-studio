@@ -153,6 +153,40 @@ function render() {
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
 
+async function cleanAlphaMask(foregroundBlob) {
+  const image = await createImageBitmap(foregroundBlob);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  image.close();
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = imageData.data;
+  const transparentCutoff = 48;
+  const opaqueCutoff = 210;
+  const range = opaqueCutoff - transparentCutoff;
+
+  for (let index = 3; index < pixels.length; index += 4) {
+    const alpha = pixels[index];
+    if (alpha <= transparentCutoff) {
+      pixels[index] = 0;
+    } else if (alpha >= opaqueCutoff) {
+      pixels[index] = 255;
+    } else {
+      const normalized = (alpha - transparentCutoff) / range;
+      const contrasted = normalized * normalized * (3 - (2 * normalized));
+      pixels[index] = Math.round(contrasted * 255);
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not clean the product edges.")), "image/png", 1);
+  });
+}
+
 async function putOnWhiteBackground(foregroundBlob) {
   const image = await createImageBitmap(foregroundBlob);
   const canvas = document.createElement("canvas");
@@ -205,10 +239,13 @@ async function processPhotos() {
           render();
         }
       }), 120000);
+      photo.statusLabel = "cleaning edges";
+      render();
+      const cleanedTransparentBlob = await cleanAlphaMask(transparentBlob);
       if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
       photo.resultBlob = state.background === "white"
-        ? await putOnWhiteBackground(transparentBlob)
-        : transparentBlob;
+        ? await putOnWhiteBackground(cleanedTransparentBlob)
+        : cleanedTransparentBlob;
       photo.resultUrl = URL.createObjectURL(photo.resultBlob);
       photo.status = "complete";
       photo.statusLabel = "ready";
