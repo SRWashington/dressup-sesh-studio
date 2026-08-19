@@ -57,6 +57,38 @@ async function predictionResult(initial: Record<string, unknown>, token: string)
   return prediction;
 }
 
+function retryDelay(response: Response, payload: Record<string, unknown>, attempt: number) {
+  const retryAfter = Number(response.headers.get("retry-after") || "");
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(35000, retryAfter * 1000);
+  const detail = String(payload.detail || payload.error || "");
+  const seconds = Number(detail.match(/(?:~|in\s+)(\d+)\s*s(?:econds?)?/i)?.[1] || "");
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(35000, seconds * 1000 + 500);
+  return [2000, 5000, 11000][attempt] || 11000;
+}
+
+async function createPrediction(token: string, body: Record<string, unknown>) {
+  let lastResponse: Response | null = null;
+  let lastPayload: Record<string, unknown> = {};
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Prefer: "wait=45",
+        "Cancel-After": "60s",
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    lastResponse = response;
+    lastPayload = payload;
+    if (response.status !== 429 || attempt === 3) return { response, payload };
+    await new Promise((resolve) => setTimeout(resolve, retryDelay(response, payload, attempt)));
+  }
+  return { response: lastResponse!, payload: lastPayload };
+}
+
 Deno.serve(async (request: Request) => {
   const cors = corsHeaders(request);
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -81,15 +113,7 @@ Deno.serve(async (request: Request) => {
     const bytes = new Uint8Array(await imageValue.arrayBuffer());
     const dataUri = `data:${imageValue.type};base64,${bytesToBase64(bytes)}`;
 
-    const response = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Prefer: "wait=45",
-        "Cancel-After": "60s",
-      },
-      body: JSON.stringify({
+    const { response, payload } = await createPrediction(token, {
         version: modelVersion,
         input: {
           image: dataUri,
@@ -98,10 +122,7 @@ Deno.serve(async (request: Request) => {
           background_type: background === "transparent" ? "rgba" : "white",
           format: "png",
         },
-      }),
     });
-
-    const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       console.error("Replicate create prediction error", response.status, JSON.stringify(payload).slice(0, 1200));
       const message = response.status === 401
