@@ -750,7 +750,6 @@ $$('[data-creative-type]').forEach((button) => button.addEventListener("click", 
   if (state.creativeGenerating) return;
   state.creativeType = button.dataset.creativeType;
   $$('[data-creative-type]').forEach((item) => item.classList.toggle("selected", item === button));
-  resetCreativeOutput();
   render();
 }));
 
