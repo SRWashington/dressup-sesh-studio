@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=quality-modes-5">
+  <link rel="stylesheet" href="styles.css?v=creative-studio-1">
   <link rel="stylesheet" href="auth.css?v=private-studio-1">
 </head>
 <body class="auth-pending">
@@ -45,6 +45,7 @@
     <nav class="mode-tabs" aria-label="Studio mode">
       <button class="active" data-tab="photos">01 · PHOTO CLEANUP</button>
       <button data-tab="listing">02 · LISTING COPY</button>
+      <button data-tab="creative">03 · CREATIVE IMAGES</button>
     </nav>
 
     <section class="workspace" id="photos-panel">
@@ -76,12 +77,57 @@
           </div>
         </div>
         <div class="action-buttons">
+          <button class="clear-all" id="clear-all" type="button">CLEAR ALL · NEW ITEM</button>
           <button class="download-all" id="download-all" disabled>DOWNLOAD ALL</button>
           <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
         </div>
       </div>
 
       <div class="setup-note" id="setup-note"><strong>Unlimited full-size downloads.</strong><span>Use Download All to package every ready PNG into one ZIP. Choose Fast for dark, high-contrast items. Choose Best for Light Items for ivory, white, beige, silver or pastel products; its larger AI model can take up to four minutes per photo.</span></div>
+    </section>
+
+    <section class="workspace hidden" id="creative-panel">
+      <div class="workspace-head"><div><p class="step">STEP 03</p><h2>Create campaign-ready product images</h2><p>Choose one format, add an optional visual reference and generate only when you are ready.</p></div></div>
+      <button class="empty-listing" id="empty-creative"><span>＋</span><strong>Add product photos first</strong><small>Your uploaded item photos keep every generated image product-specific.</small></button>
+      <div class="creative-layout hidden" id="creative-layout">
+        <div class="creative-controls">
+          <p class="step">IMAGE FORMAT</p>
+          <div class="creative-types" role="radiogroup" aria-label="Generated image format">
+            <button class="selected" data-creative-type="on_body" type="button"><strong>On-the-body fit photo</strong><span>Natural vertical iPhone-style fit image</span></button>
+            <button data-creative-type="ghost" type="button"><strong>Ghost mannequin</strong><span>Clean apparel-focused listing image</span></button>
+            <button data-creative-type="influencer" type="button"><strong>Social media influencer post</strong><span>Aspirational, believable lifestyle content</span></button>
+            <button data-creative-type="editorial" type="button"><strong>Styled layout editorial image</strong><span>Magazine-inspired flat lay or product composition</span></button>
+          </div>
+
+          <div class="creative-field">
+            <label for="creative-reference"><strong>OPTIONAL REFERENCE PHOTO</strong><span>Used for pose, framing, setting or layout—not as the product.</span></label>
+            <input id="creative-reference" type="file" accept="image/jpeg,image/png,image/webp,.heic,.heif" hidden>
+            <button class="reference-picker" id="reference-picker" type="button"><span>＋</span><strong>Add inspiration photo</strong><small>JPG, PNG, WEBP or HEIC</small></button>
+            <div class="reference-preview hidden" id="reference-preview">
+              <img id="reference-image" alt="Creative reference preview">
+              <div><strong>REFERENCE READY</strong><button id="remove-reference" type="button">REMOVE</button></div>
+            </div>
+          </div>
+
+          <label class="creative-field" for="creative-instructions"><strong>OPTIONAL DIRECTION</strong><span>Example: use this pose, crop below the face, or match this camera angle.</span>
+            <textarea id="creative-instructions" maxlength="500" rows="4" placeholder="Add any specific direction…"></textarea>
+          </label>
+
+          <div class="creative-source-wrap">
+            <p class="step">PRODUCT SOURCE PHOTOS</p>
+            <div class="source-strip" id="creative-source-strip"></div>
+          </div>
+          <button class="primary wide" id="creative-generate" type="button">GENERATE ON-THE-BODY PHOTO</button>
+          <p class="microcopy">OpenAI image generation is billed per request. Nothing is generated until you press the button.</p>
+          <p class="error-text hidden" id="creative-error"></p>
+        </div>
+
+        <div class="creative-output">
+          <div class="output-head"><span>GENERATED OUTPUT</span><a class="hidden" id="creative-download" download="dressup-sesh-creative.jpg">DOWNLOAD</a></div>
+          <div class="creative-placeholder" id="creative-placeholder"><span>DS</span><p>Your generated image will appear here. Review product details before posting.</p></div>
+          <img class="hidden" id="creative-output-image" alt="Generated Dressup Sesh product image">
+        </div>
+      </div>
     </section>
 
     <section class="workspace hidden" id="listing-panel">
@@ -121,6 +167,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=edge-cleanup-2"></script>
+  <script type="module" src="app.js?v=creative-studio-1"></script>
 </body>
 </html>
