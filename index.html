@@ -6,6 +6,7 @@
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="auth.css">
 </head>
 <body>
   <main class="app-shell" id="top">
@@ -14,7 +15,10 @@
         <span class="brand-mark">DS</span>
         <span><strong>DRESSUP SESH</strong><small>LISTING STUDIO</small></span>
       </a>
-      <span class="connection-pill" id="connection-pill"><span class="status-dot"></span><span id="connection-copy">Setup required</span></span>
+      <div class="account-tools">
+        <span class="connection-pill" id="connection-pill"><span class="status-dot"></span><span id="connection-copy">Setup required</span></span>
+        <button class="auth-button" id="auth-button">SIGN IN</button>
+      </div>
     </header>
 
     <section class="intro">
@@ -76,7 +80,20 @@
 
     <footer><span>DRESSUP SESH STUDIO</span><span>ONE ITEM IN · READY TO SELL OUT</span></footer>
   </main>
+  <dialog class="auth-dialog" id="auth-dialog">
+    <button class="dialog-close" id="dialog-close" aria-label="Close sign-in">×</button>
+    <p class="eyebrow">PRIVATE STUDIO ACCESS</p>
+    <h2>Sign in to process</h2>
+    <p>Your password goes directly to Supabase Auth and is never stored in this website.</p>
+    <form id="auth-form">
+      <label>Email<input id="auth-email" type="email" autocomplete="email" required></label>
+      <label>Password<input id="auth-password" type="password" autocomplete="current-password" minlength="8" required></label>
+      <button class="primary wide" type="submit">SIGN IN</button>
+    </form>
+    <button class="secondary wide" id="signup-button">CREATE OWNER ACCOUNT</button>
+    <p class="auth-message" id="auth-message"></p>
+  </dialog>
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
