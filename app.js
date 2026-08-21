@@ -28,7 +28,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const elements = {
   input: $("#file-input"), dropzone: $("#dropzone"), grid: $("#photo-grid"),
-  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), saveAll: $("#save-all"), clearAll: $("#clear-all"),
+  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), saveAll: $("#save-all"), saveReferences: $("#save-references"), clearAll: $("#clear-all"),
   setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"), creativePanel: $("#creative-panel"),
   emptyListing: $("#empty-listing"), listingLayout: $("#listing-layout"), sourceStrip: $("#source-strip"),
   listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingAdditional: $("#listing-additional-info"), listingOutput: $("#listing-output"),
@@ -40,7 +40,7 @@ const elements = {
   creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
   referenceImage: $("#reference-image"), removeReference: $("#remove-reference"), creativeInstructions: $("#creative-instructions"),
   creativeGenerate: $("#creative-generate"), creativeOutput: $(".creative-output"), creativePlaceholder: $("#creative-placeholder"),
-  creativeResults: $("#creative-results"), creativeCount: $("#creative-count"), creativeError: $("#creative-error"),
+  creativeResults: $("#creative-results"), creativeCount: $("#creative-count"), creativeSaveAll: $("#creative-save-all"), creativeError: $("#creative-error"),
   editorDialog: $("#photo-editor-dialog"), editorCanvas: $("#photo-editor-canvas"), editorBrush: $("#editor-brush-size"),
   editorBrushOutput: $("#editor-brush-output"), editorUndo: $("#editor-undo"), editorReset: $("#editor-reset"),
   editorRemove: $("#editor-mode-remove"), editorRestore: $("#editor-mode-restore"),
@@ -220,6 +220,9 @@ function resetCreativeOutput() {
   state.creativeResults = [];
   elements.creativeResults.innerHTML = "";
   elements.creativeResults.classList.add("hidden");
+  elements.creativeSaveAll.classList.add("hidden");
+  elements.creativeSaveAll.disabled = true;
+  elements.creativeSaveAll.textContent = "SAVE ALL CREATIVE TO PHOTOS";
   elements.creativeCount.textContent = "";
   elements.creativePlaceholder.classList.remove("hidden");
   elements.creativeError.textContent = "";
@@ -230,6 +233,11 @@ function renderCreativeResults() {
   const hasResults = state.creativeResults.length > 0;
   elements.creativePlaceholder.classList.toggle("hidden", hasResults);
   elements.creativeResults.classList.toggle("hidden", !hasResults);
+  elements.creativeSaveAll.classList.toggle("hidden", !hasResults);
+  elements.creativeSaveAll.disabled = !hasResults || state.creativeGenerating;
+  elements.creativeSaveAll.textContent = hasResults
+    ? `SAVE ALL CREATIVE TO PHOTOS · ${state.creativeResults.length}`
+    : "SAVE ALL CREATIVE TO PHOTOS";
   elements.creativeCount.textContent = hasResults
     ? `${state.creativeResults.length} IMAGE${state.creativeResults.length === 1 ? "" : "S"} KEPT`
     : "";
@@ -286,12 +294,16 @@ function render() {
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
   const recordPhotos = savableRecordPhotos();
+  const referenceRecords = recordPhotos.filter(({ photo }) => photo.referenceOnly);
   elements.process.disabled = !configured || !state.session || !pendingCleanupPhotos.length || state.processing || isPreparing;
   elements.downloadAll.disabled = !recordPhotos.length || state.processing || isPreparing;
   elements.saveAll.disabled = !recordPhotos.length || state.processing || isPreparing;
+  elements.saveReferences.classList.toggle("hidden", !referenceRecords.length);
+  elements.saveReferences.disabled = !referenceRecords.length || state.processing || isPreparing;
   elements.clearAll.disabled = state.processing || state.creativeGenerating;
   elements.downloadAll.textContent = recordPhotos.length ? `DOWNLOAD ALL · ${recordPhotos.length}` : "DOWNLOAD ALL";
   elements.saveAll.textContent = recordPhotos.length ? `SAVE ALL TO PHOTOS · ${recordPhotos.length}` : "SAVE ALL TO PHOTOS";
+  elements.saveReferences.textContent = referenceRecords.length ? `SAVE REFERENCE PHOTOS · ${referenceRecords.length}` : "SAVE REFERENCE PHOTOS";
   elements.process.textContent = state.processing
     ? `PROCESSING ${state.processedCount + 1} OF ${state.processingTotal}…`
     : isPreparing
@@ -308,6 +320,7 @@ function render() {
   elements.creativeLayout.classList.toggle("hidden", !hasPhotos);
   elements.creativeGenerate.disabled = !configured || !state.session || !productPhotos.length || isPreparing || state.creativeGenerating;
   elements.creativeGenerate.textContent = state.creativeGenerating ? "GENERATING…" : creativeLabels[state.creativeType];
+  elements.creativeSaveAll.disabled = !state.creativeResults.length || state.creativeGenerating;
   elements.creativeOutput.classList.toggle("generating", state.creativeGenerating);
   const listingSources = selectPhotosForRequest(usablePhotos, 8, true);
   const creativeSources = selectPhotosForRequest(usablePhotos, 6, false);
@@ -729,6 +742,58 @@ async function saveAllPhotos() {
   }
 }
 
+async function saveReferencePhotos() {
+  const records = savableRecordPhotos().filter(({ photo }) => photo.referenceOnly);
+  if (!records.length) return;
+  const files = records.map(({ shareBlob, shareFilename }) => new File(
+    [shareBlob],
+    shareFilename,
+    { type: recordMimeType(shareBlob, shareFilename) }
+  ));
+
+  if (!navigator.share || !navigator.canShare?.({ files })) {
+    window.alert("This device cannot open the Reference Only photos together. Hold down each reference thumbnail to save it, or use Download All for the original files.");
+    return;
+  }
+
+  elements.saveReferences.disabled = true;
+  elements.saveReferences.textContent = "OPENING REFERENCES…";
+  try {
+    await navigator.share({ files, title: "Dressup Sesh reference photos" });
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      window.alert("The reference photos could not be opened together. Hold down each reference thumbnail to save it, or use Download All.");
+    }
+  } finally {
+    render();
+  }
+}
+
+async function saveAllCreativePhotos() {
+  if (!state.creativeResults.length) return;
+  const files = state.creativeResults
+    .slice()
+    .reverse()
+    .map((result) => new File([result.blob], result.filename, { type: result.blob.type || "image/jpeg" }));
+
+  if (!navigator.share || !navigator.canShare?.({ files })) {
+    window.alert("This device cannot open several creative images at once. Use each image’s Save to Photos button instead.");
+    return;
+  }
+
+  elements.creativeSaveAll.disabled = true;
+  elements.creativeSaveAll.textContent = "OPENING CREATIVE IMAGES…";
+  try {
+    await navigator.share({ files, title: "Dressup Sesh creative images" });
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      window.alert("The creative images could not be opened together. Please save them individually.");
+    }
+  } finally {
+    renderCreativeResults();
+  }
+}
+
 async function downloadAllPhotos() {
   const records = savableRecordPhotos();
   if (!records.length || typeof window.JSZip !== "function") return;
@@ -938,11 +1003,13 @@ elements.input.addEventListener("change", () => { addFiles(elements.input.files)
 elements.process.addEventListener("click", processPhotos);
 elements.downloadAll.addEventListener("click", downloadAllPhotos);
 elements.saveAll.addEventListener("click", saveAllPhotos);
+elements.saveReferences.addEventListener("click", saveReferencePhotos);
 elements.clearAll.addEventListener("click", clearAllPhotos);
 elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.emptyCreative.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.creativeGenerate.addEventListener("click", generateCreativeImage);
+elements.creativeSaveAll.addEventListener("click", saveAllCreativePhotos);
 elements.editorCanvas.addEventListener("pointerdown", beginEditorStroke);
 elements.editorCanvas.addEventListener("pointermove", continueEditorStroke);
 elements.editorCanvas.addEventListener("pointerup", endEditorStroke);
