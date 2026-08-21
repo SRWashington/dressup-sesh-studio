@@ -110,6 +110,21 @@ function resultFileName(photo, index) {
   return `clean-${String(index + 1).padStart(2, "0")}-${baseName || "photo"}.png`;
 }
 
+function referenceFileName(photo, index) {
+  const originalName = photo.originalFile?.name || photo.file.name || `photo-${index + 1}`;
+  const safeName = originalName.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-|-$/g, "");
+  return `reference-${String(index + 1).padStart(2, "0")}-${safeName || `photo-${index + 1}`}`;
+}
+
+function recordMimeType(blob, filename) {
+  if (blob.type) return blob.type;
+  const extension = filename.split(".").pop()?.toLowerCase();
+  return ({
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+    gif: "image/gif", heic: "image/heic", heif: "image/heif"
+  })[extension] || "application/octet-stream";
+}
+
 function isHeicFile(file) {
   return /\.(heic|heif)$/i.test(file.name) || /^image\/hei(c|f)$/i.test(file.type);
 }
@@ -249,13 +264,13 @@ function render() {
   elements.actionBar.classList.toggle("hidden", !hasPhotos);
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
-  const completedPhotos = state.photos.filter((photo) => !photo.referenceOnly && photo.resultBlob);
+  const recordPhotos = savableRecordPhotos();
   elements.process.disabled = !configured || !state.session || !pendingCleanupPhotos.length || state.processing || isPreparing;
-  elements.downloadAll.disabled = !completedPhotos.length || state.processing;
-  elements.saveAll.disabled = !completedPhotos.length || state.processing;
+  elements.downloadAll.disabled = !recordPhotos.length || state.processing || isPreparing;
+  elements.saveAll.disabled = !recordPhotos.length || state.processing || isPreparing;
   elements.clearAll.disabled = state.processing || state.creativeGenerating;
-  elements.downloadAll.textContent = completedPhotos.length ? `DOWNLOAD ALL · ${completedPhotos.length}` : "DOWNLOAD ALL";
-  elements.saveAll.textContent = completedPhotos.length ? `SAVE ALL TO PHOTOS · ${completedPhotos.length}` : "SAVE ALL TO PHOTOS";
+  elements.downloadAll.textContent = recordPhotos.length ? `DOWNLOAD ALL · ${recordPhotos.length}` : "DOWNLOAD ALL";
+  elements.saveAll.textContent = recordPhotos.length ? `SAVE ALL TO PHOTOS · ${recordPhotos.length}` : "SAVE ALL TO PHOTOS";
   elements.process.textContent = state.processing
     ? `PROCESSING ${state.processedCount + 1} OF ${state.processingTotal}…`
     : isPreparing
@@ -647,19 +662,29 @@ async function saveBlobToDevice(blob, filename, title) {
   triggerDownload(blob, filename);
 }
 
-function completedProductPhotos() {
+function savableRecordPhotos() {
   return state.photos
     .map((photo, index) => ({ photo, index }))
-    .filter(({ photo }) => !photo.referenceOnly && photo.resultBlob);
+    .map(({ photo, index }) => {
+      const blob = photo.referenceOnly ? photo.originalFile || photo.file : photo.resultBlob;
+      if (!blob) return null;
+      return {
+        photo,
+        index,
+        blob,
+        filename: photo.referenceOnly ? referenceFileName(photo, index) : resultFileName(photo, index)
+      };
+    })
+    .filter(Boolean);
 }
 
 async function saveAllPhotos() {
-  const completed = completedProductPhotos();
-  if (!completed.length) return;
-  const files = completed.map(({ photo, index }) => new File(
-    [photo.resultBlob],
-    resultFileName(photo, index),
-    { type: photo.resultBlob.type || "image/png" }
+  const records = savableRecordPhotos();
+  if (!records.length) return;
+  const files = records.map(({ blob, filename }) => new File(
+    [blob],
+    filename,
+    { type: recordMimeType(blob, filename) }
   ));
 
   if (!navigator.share || !navigator.canShare?.({ files })) {
@@ -670,7 +695,7 @@ async function saveAllPhotos() {
   elements.saveAll.disabled = true;
   elements.saveAll.textContent = "OPENING PHOTOS…";
   try {
-    await navigator.share({ files, title: "Dressup Sesh cleaned product photos" });
+    await navigator.share({ files, title: "Dressup Sesh product photo records" });
   } catch (error) {
     if (error?.name !== "AbortError") {
       window.alert("The photos could not be opened for saving. Please try Download All instead.");
@@ -681,22 +706,22 @@ async function saveAllPhotos() {
 }
 
 async function downloadAllPhotos() {
-  const completed = completedProductPhotos();
-  if (!completed.length || typeof window.JSZip !== "function") return;
+  const records = savableRecordPhotos();
+  if (!records.length || typeof window.JSZip !== "function") return;
 
   elements.downloadAll.disabled = true;
   elements.downloadAll.textContent = "PACKAGING…";
   try {
     const zip = new window.JSZip();
-    completed.forEach(({ photo, index }) => {
-      zip.file(resultFileName(photo, index), photo.resultBlob);
+    records.forEach(({ blob, filename }) => {
+      zip.file(filename, blob);
     });
     const zipBlob = await zip.generateAsync({
       type: "blob",
       compression: "DEFLATE",
       compressionOptions: { level: 6 }
     });
-    triggerDownload(zipBlob, "dressup-sesh-clean-photos.zip");
+    triggerDownload(zipBlob, "dressup-sesh-product-photo-records.zip");
   } finally {
     render();
   }
