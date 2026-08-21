@@ -4,6 +4,9 @@
   const previous = document.querySelector("[data-demo-prev]");
   const next = document.querySelector("[data-demo-next]");
   const position = document.querySelector("[data-demo-position]");
+  const mobileNumber = document.querySelector("[data-mobile-demo-number]");
+  const mobileTitle = document.querySelector("[data-mobile-demo-title]");
+  const mobileCopy = document.querySelector("[data-mobile-demo-copy]");
   if (!stage || !steps.length) return;
 
   const names = steps.map((step) => step.dataset.demoStep);
@@ -17,6 +20,11 @@
       step.classList.toggle("is-active", active);
       if (active) step.setAttribute("aria-current", "step");
       else step.removeAttribute("aria-current");
+      if (active) {
+        if (mobileNumber) mobileNumber.textContent = step.querySelector(":scope > span")?.textContent || "";
+        if (mobileTitle) mobileTitle.textContent = step.querySelector("h3")?.textContent || "";
+        if (mobileCopy) mobileCopy.textContent = step.querySelector("p")?.textContent || "";
+      }
     });
   };
 
@@ -29,7 +37,7 @@
   previous?.addEventListener("click", () => move(-1));
   next?.addEventListener("click", () => move(1));
 
-  if (!("IntersectionObserver" in window)) return;
+  if (!("IntersectionObserver" in window) || !window.matchMedia("(min-width: 761px)").matches) return;
 
   const observer = new IntersectionObserver((entries) => {
     const visible = entries
