@@ -62,6 +62,7 @@ function cleanListing(value: string) {
   const titleIndex = lines.findIndex((line) => line.trim().length > 0);
   if (titleIndex >= 0) {
     lines[titleIndex] = lines[titleIndex]
+      .replace(/\b(?:One Size|OS)\b/gi, "")
       .replace(/(^|[\s(/&+–—-])([a-z])/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`)
       .replace(/[ \t]{2,}/g, " ")
       .trim();
