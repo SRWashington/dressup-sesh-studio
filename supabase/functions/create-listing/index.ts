@@ -11,7 +11,7 @@ import {
 
 const listingModel = "gpt-5.6-luna";
 
-const prompt = `You are Dressup Sesh Listing Studio, a precision Poshmark listing writer.
+const prompt = `You are Dressup Sesh Listing Studio, a precision resale marketplace listing writer.
 
 Study every supplied photo as one product. Return ONLY a finished listing in this exact layout:
 
@@ -129,7 +129,7 @@ Deno.serve(async (request: Request) => {
       : 0;
 
     const additionalInfoBlock = additionalInfo
-      ? `\n\nOWNER-SUPPLIED REFERENCE INFORMATION (trusted facts for this item):\n${additionalInfo}\n\nUse all relevant owner-supplied facts naturally in the exact listing layout. Treat these facts as higher priority than visual inference when they conflict. Do not mention that reference information was supplied and do not create an extra notes section.`
+      ? `\n\nUSER-SUPPLIED REFERENCE INFORMATION (trusted facts for this item):\n${additionalInfo}\n\nUse all relevant user-supplied facts naturally in the exact listing layout. Treat these facts as higher priority than visual inference when they conflict. Do not mention that reference information was supplied and do not create an extra notes section.`
       : "";
     const referencePhotoBlock = referenceCount
       ? `\n\nPHOTO ROLES: The first ${referenceCount} image${referenceCount === 1 ? " is" : "s are"} REFERENCE-ONLY evidence for labels, measurements, materials, condition details or other facts. Read them carefully and give their legible factual information priority. They are not cleaned listing photos, so do not describe rulers, measuring tapes, hands, backgrounds or staging objects as product features or included accessories. The remaining images show the product for appearance and presentation.`
@@ -161,7 +161,7 @@ Deno.serve(async (request: Request) => {
         text: {
           format: {
             type: "json_schema",
-            name: "poshmark_listing",
+            name: "marketplace_listing",
             strict: true,
             schema: {
               type: "object",
@@ -185,19 +185,9 @@ Deno.serve(async (request: Request) => {
       reservationCompleted = true;
       console.error("OpenAI error", response.status, JSON.stringify(payload).slice(0, 1000));
       const errorCode = String(payload?.error?.code || "");
-      const billingCodes = new Set([
-        "credit_balance_exhausted",
-        "organization_spend_limit_exceeded",
-        "project_spend_limit_exceeded",
-        "organization_usage_limit_exceeded",
-      ]);
-      const message = response.status === 429 && billingCodes.has(errorCode)
-        ? "OpenAI API billing needs attention. Add credits or raise the project spending limit, then try again."
-        : response.status === 429
-          ? "OpenAI is temporarily rate-limiting requests. Wait a minute and try again."
-          : response.status === 401
-            ? "The OpenAI API key was rejected. Replace OPENAI_API_KEY in Supabase and try again."
-            : "Listing generation failed. Please try again.";
+      const message = response.status === 429
+        ? "The listing service is busy. Wait a minute and try again."
+        : "Listing generation is temporarily unavailable. Please try again shortly.";
       return new Response(JSON.stringify({ error: message, code: errorCode || undefined }), {
         status: response.status,
         headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
