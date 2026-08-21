@@ -110,7 +110,7 @@ Deno.serve(async (request: Request) => {
     user = await requireUser(request);
     const token = Deno.env.get("REPLICATE_API_TOKEN");
     if (!token) {
-      return json({ error: "Replicate background cleanup is not configured yet." }, 503, cors);
+      return json({ error: "Background cleanup is temporarily unavailable." }, 503, cors);
     }
 
     const form = await request.formData();
@@ -151,13 +151,9 @@ Deno.serve(async (request: Request) => {
       });
       reservationCompleted = true;
       console.error("Replicate create prediction error", response.status, JSON.stringify(payload).slice(0, 1200));
-      const message = response.status === 401
-        ? "The Replicate token was rejected. Replace REPLICATE_API_TOKEN in Supabase."
-        : response.status === 402
-          ? "Replicate billing needs attention. Add credit in Replicate and try again."
-          : response.status === 429
-            ? "Replicate is temporarily rate-limiting requests. Wait a moment and try again."
-            : "The cloud cleanup could not be started. Please try again.";
+      const message = response.status === 429
+        ? "The background cleanup service is busy. Wait a moment and try again."
+        : "Background cleanup is temporarily unavailable. Please try again shortly.";
       return json({ error: message }, response.status, cors);
     }
 
