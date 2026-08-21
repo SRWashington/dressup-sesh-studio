@@ -1,5 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { corsHeaders, errorResponse, requireOwner } from "../_shared/security.ts";
+import {
+  completeStudioUsage,
+  corsHeaders,
+  errorResponse,
+  requireUser,
+  reserveStudioUsage,
+  type StudioAccess,
+  type StudioUser,
+} from "../_shared/security.ts";
 
 const modelVersion = "a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc";
 const allowedOutputHosts = ["replicate.delivery", "pbxt.replicate.delivery"];
@@ -94,14 +102,22 @@ Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: cors });
 
+  let user: StudioUser | null = null;
+  let access: StudioAccess | null = null;
+  let reservationId = 0;
+  let reservationCompleted = false;
   try {
-    await requireOwner(request);
+    user = await requireUser(request);
     const token = Deno.env.get("REPLICATE_API_TOKEN");
     if (!token) {
       return json({ error: "Replicate background cleanup is not configured yet." }, 503, cors);
     }
 
     const form = await request.formData();
+    const clientItemId = String(form.get("client_item_id") || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientItemId)) {
+      return json({ error: "Start a new item and try again." }, 400, cors);
+    }
     const imageValue = form.get("image");
     if (!(imageValue instanceof File) || !imageValue.size) {
       return json({ error: "Add a product photo first." }, 400, cors);
@@ -112,6 +128,9 @@ Deno.serve(async (request: Request) => {
     const background = String(form.get("background") || "white") === "transparent" ? "transparent" : "white";
     const bytes = new Uint8Array(await imageValue.arrayBuffer());
     const dataUri = `data:${imageValue.type};base64,${bytesToBase64(bytes)}`;
+
+    access = await reserveStudioUsage(user, clientItemId, "background_remove");
+    reservationId = Number(access.reservation_id || 0);
 
     const { response, payload } = await createPrediction(token, {
         version: modelVersion,
@@ -124,6 +143,13 @@ Deno.serve(async (request: Request) => {
         },
     });
     if (!response.ok) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "replicate",
+        model: modelVersion,
+        providerUsage: { status: response.status, prediction_id: payload?.id || null },
+      });
+      reservationCompleted = true;
       console.error("Replicate create prediction error", response.status, JSON.stringify(payload).slice(0, 1200));
       const message = response.status === 401
         ? "The Replicate token was rejected. Replace REPLICATE_API_TOKEN in Supabase."
@@ -137,11 +163,25 @@ Deno.serve(async (request: Request) => {
 
     const prediction = await predictionResult(payload, token);
     if (["failed", "canceled"].includes(String(prediction.status || ""))) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "replicate",
+        model: modelVersion,
+        providerUsage: { prediction_id: prediction.id || null, status: prediction.status || null, metrics: prediction.metrics || null },
+      });
+      reservationCompleted = true;
       console.error("Replicate prediction failed", JSON.stringify(prediction).slice(0, 1200));
       return json({ error: "The background remover could not process this photo. Try another angle or crop." }, 422, cors);
     }
     const outputUrl = safeOutputUrl(prediction.output);
     if (!outputUrl) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "replicate",
+        model: modelVersion,
+        providerUsage: { prediction_id: prediction.id || null, status: prediction.status || null },
+      });
+      reservationCompleted = true;
       return json({ error: "The background remover is still busy. Please try this photo again." }, 504, cors);
     }
 
@@ -152,6 +192,14 @@ Deno.serve(async (request: Request) => {
     const output = await outputResponse.arrayBuffer();
     if (!output.byteLength || output.byteLength > 20 * 1024 * 1024) throw new Error("INVALID_OUTPUT_SIZE");
 
+    await completeStudioUsage(user, reservationId, {
+      success: true,
+      provider: "replicate",
+      model: modelVersion,
+      providerUsage: { prediction_id: prediction.id || null, status: prediction.status || null, metrics: prediction.metrics || null },
+    });
+    reservationCompleted = true;
+
     return new Response(output, {
       status: 200,
       headers: {
@@ -159,9 +207,19 @@ Deno.serve(async (request: Request) => {
         "Content-Type": outputType,
         "Cache-Control": "no-store",
         "Content-Disposition": "inline; filename=clean-product.png",
+        "X-Studio-Items-Remaining": access?.items_remaining == null ? "unlimited" : String(access.items_remaining),
+        "X-Studio-Owner": access?.owner ? "true" : "false",
       },
     });
   } catch (error) {
+    if (user && reservationId && !reservationCompleted) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "replicate",
+        model: modelVersion,
+        providerUsage: { error: error instanceof Error ? error.message : "UNKNOWN" },
+      }).catch((completionError) => console.error("remove-product-background usage completion error", completionError));
+    }
     console.error("remove-product-background error", error);
     return errorResponse(error, cors);
   }
