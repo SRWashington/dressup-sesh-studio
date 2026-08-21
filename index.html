@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="AI-powered product photo cleanup, marketplace listing copy and creative images for online resellers.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=believable-results-1">
-  <link rel="stylesheet" href="auth.css?v=believable-results-1">
+  <link rel="stylesheet" href="styles.css?v=carousel-refine-1">
+  <link rel="stylesheet" href="auth.css?v=carousel-refine-1">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .cloud-choice>span{min-width:72px;margin-right:6px;font-size:9px;font-weight:800;letter-spacing:.15em}
@@ -60,8 +60,16 @@
               <div class="demo-label"><span>BEFORE</span><small>Everyday seller photo</small></div>
               <img src="assets/demo-dress-before.jpg" alt="Teal satin wrap dress photographed on a hanger in a cluttered bedroom" width="1122" height="1402" loading="lazy">
             </figure>
+            <div class="demo-flow-arrow" aria-hidden="true"><span>→</span><small>TRANSFORM</small></div>
             <div class="results-package" aria-label="Dressup Sesh example results package">
-              <div class="package-heading"><span>RESULTS PACKAGE</span><small>3 ready-to-use assets</small></div>
+              <div class="package-heading">
+                <div class="package-title"><span>RESULTS PACKAGE</span><small>3 ready-to-use assets</small></div>
+                <div class="package-nav" aria-label="Navigate example results">
+                  <button type="button" data-demo-prev aria-label="Previous result">←</button>
+                  <span data-demo-position aria-live="polite">1 / 3</span>
+                  <button type="button" data-demo-next aria-label="Next result">→</button>
+                </div>
+              </div>
               <div class="result-stack">
                 <article class="demo-result clean-result" data-demo-result="clean">
                   <div class="demo-label"><span>01 · CLEAN</span><small>Listing photo</small></div>
@@ -69,10 +77,15 @@
                 </article>
                 <article class="demo-result copy-result" data-demo-result="copy">
                   <div class="demo-label"><span>02 · DESCRIBE</span><small>Searchable copy</small></div>
-                  <div class="copy-sample">
-                    <p class="copy-kicker">TEAL SATIN WRAP MIDI DRESS</p>
-                    <p>Rich jewel-tone satin meets a flattering wrap silhouette, softly puffed sleeves and effortless movement—an elevated choice for wedding guests, date nights and holiday dressing.</p>
-                    <div><span>SATIN</span><span>WRAP</span><span>OCCASION</span></div>
+                  <div class="copy-panel">
+                    <div class="copy-panel-head"><span>COPY-READY OUTPUT</span><span>COPY ALL</span></div>
+                    <div class="copy-panel-body">
+                      <p class="listing-title">Teal Wrap Maxi Dress With Puff Sleeves And Tie Waist</p>
+                      <p>Teal maxi dress with a wrap-style V-neckline, gathered puff sleeves, fitted waist, adjustable side tie, and flowing full-length skirt. The fabric has a smooth satin-like sheen, creating an elegant draped silhouette.</p>
+                      <p>Good condition. No wear visible.</p>
+                      <p><strong>Keywords:</strong> teal maxi dress, wrap dress, puff sleeve dress, tie waist dress, V-neck maxi dress, satin-look dress, formal occasion dress, wedding guest dress</p>
+                      <p><strong>Approx. original retail:</strong> $40–$80</p>
+                    </div>
                   </div>
                 </article>
                 <article class="demo-result creative-result" data-demo-result="creative">
@@ -86,13 +99,13 @@
           <div class="transformation-steps" aria-label="Value of each result">
             <article class="transformation-step is-active" data-demo-step="clean">
               <span>01</span>
-              <h3>Clean the distraction.</h3>
-              <p>A consistent studio background puts the product first and creates a polished, marketplace-ready main image.</p>
+              <h3>Clear the distractions.</h3>
+              <p>Create studio-like product images with crisp, clear backgrounds that put the item first and feel ready for any marketplace.</p>
             </article>
             <article class="transformation-step" data-demo-step="copy">
               <span>02</span>
               <h3>Make the details searchable.</h3>
-              <p>Concise, specific language turns visible features into an intriguing reason to stop, search and click.</p>
+              <p>Knowledgeable, optimized copy names the features buyers search for. Approximate original retail context also helps validate value and gives you a smarter starting point for pricing.</p>
             </article>
             <article class="transformation-step" data-demo-step="creative">
               <span>03</span>
@@ -350,7 +363,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script src="landing.js?v=believable-results-1"></script>
-  <script type="module" src="app.js?v=believable-results-1"></script>
+  <script src="landing.js?v=carousel-refine-1"></script>
+  <script type="module" src="app.js?v=carousel-refine-1"></script>
 </body>
 </html>
