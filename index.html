@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=creative-gallery-1">
+  <link rel="stylesheet" href="styles.css?v=creative-save-all-1">
   <link rel="stylesheet" href="auth.css?v=private-studio-1">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -89,6 +89,7 @@
         <div class="action-buttons">
           <button class="clear-all" id="clear-all" type="button">CLEAR ALL · NEW ITEM</button>
           <button class="save-all" id="save-all" type="button" disabled>SAVE ALL TO PHOTOS</button>
+          <button class="save-references hidden" id="save-references" type="button" disabled>SAVE REFERENCE PHOTOS</button>
           <button class="download-all" id="download-all" disabled>DOWNLOAD ALL</button>
           <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
         </div>
@@ -138,6 +139,7 @@
           <div class="output-head"><span>GENERATED OUTPUTS</span><span id="creative-count"></span></div>
           <div class="creative-placeholder" id="creative-placeholder"><span>DS</span><p>Every generated image for this item will stay here until you choose Clear All · New Item.</p></div>
           <div class="creative-results hidden" id="creative-results"></div>
+          <button class="save-all creative-save-all hidden" id="creative-save-all" type="button" disabled>SAVE ALL CREATIVE TO PHOTOS</button>
         </div>
       </div>
     </section>
@@ -202,6 +204,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=creative-gallery-1"></script>
+  <script type="module" src="app.js?v=creative-save-all-1"></script>
 </body>
 </html>
