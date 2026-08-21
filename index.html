@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=reference-photos-2">
+  <link rel="stylesheet" href="styles.css?v=creative-gallery-1">
   <link rel="stylesheet" href="auth.css?v=private-studio-1">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -92,7 +92,7 @@
           <button class="download-all" id="download-all" disabled>DOWNLOAD ALL</button>
           <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
         </div>
-        <p class="save-hint">Hold down any photo to save it individually. Reference Only photos stay unedited and are included in Save All and Download All.</p>
+        <p class="save-hint">Hold down any photo to save it individually. Save All uses phone-compatible copies; Download All preserves original Reference Only files.</p>
       </div>
 
       <div class="setup-note" id="setup-note"><strong>Fast cleanup without loading an AI model on your phone.</strong><span>Mark labels, measurements or detail shots as Reference Only to skip background removal, keep the original in your saved record set and prioritize it for copy and creative accuracy.</span></div>
@@ -135,9 +135,9 @@
         </div>
 
         <div class="creative-output">
-          <div class="output-head"><span>GENERATED OUTPUT</span><div class="output-actions"><button class="hidden" id="creative-save" type="button">SAVE TO PHOTOS</button><a class="hidden" id="creative-download" download="dressup-sesh-creative.jpg">DOWNLOAD</a></div></div>
-          <div class="creative-placeholder" id="creative-placeholder"><span>DS</span><p>Your generated image will appear here. Review product details before posting.</p></div>
-          <img class="hidden" id="creative-output-image" alt="Generated Dressup Sesh product image">
+          <div class="output-head"><span>GENERATED OUTPUTS</span><span id="creative-count"></span></div>
+          <div class="creative-placeholder" id="creative-placeholder"><span>DS</span><p>Every generated image for this item will stay here until you choose Clear All · New Item.</p></div>
+          <div class="creative-results hidden" id="creative-results"></div>
         </div>
       </div>
     </section>
@@ -202,6 +202,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=reference-photos-2"></script>
+  <script type="module" src="app.js?v=creative-gallery-1"></script>
 </body>
 </html>
