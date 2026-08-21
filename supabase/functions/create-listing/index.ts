@@ -1,5 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { corsHeaders, errorResponse, requireOwner } from "../_shared/security.ts";
+import {
+  completeStudioUsage,
+  corsHeaders,
+  errorResponse,
+  getStudioAccess,
+  requireUser,
+  reserveStudioUsage,
+  type StudioUser,
+} from "../_shared/security.ts";
+
+const listingModel = "gpt-5.6-luna";
 
 const prompt = `You are Dressup Sesh Listing Studio, a precision Poshmark listing writer.
 
@@ -86,10 +96,16 @@ Deno.serve(async (request: Request) => {
     return new Response("Method not allowed", { status: 405, headers: cors });
   }
 
+  let user: StudioUser | null = null;
+  let reservationId = 0;
+  let reservationCompleted = false;
   try {
-    await requireOwner(request);
+    user = await requireUser(request);
     if (request.method === "GET") {
-      return new Response(JSON.stringify({ owner: true }), {
+      const url = new URL(request.url);
+      const clientItemId = url.searchParams.get("client_item_id");
+      const access = await getStudioAccess(user, clientItemId);
+      return new Response(JSON.stringify({ access }), {
         headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
@@ -98,6 +114,10 @@ Deno.serve(async (request: Request) => {
     if (!apiKey) throw new Error("NOT_CONFIGURED");
 
     const form = await request.formData();
+    const clientItemId = String(form.get("client_item_id") || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientItemId)) {
+      return new Response(JSON.stringify({ error: "Start a new item and try again." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const additionalInfo = String(form.get("additional_info") || "").trim().slice(0, 2000);
     const images = form.getAll("images").filter((value): value is File => value instanceof File).slice(0, 10);
     if (!images.length) {
@@ -126,11 +146,14 @@ Deno.serve(async (request: Request) => {
       content.push({ type: "input_image", image_url: `data:${image.type};base64,${encoded}`, detail: "high" });
     }
 
+    const access = await reserveStudioUsage(user, clientItemId, "listing_copy");
+    reservationId = Number(access.reservation_id || 0);
+
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-5.6-luna",
+        model: listingModel,
         store: false,
         reasoning: { effort: "low" },
         max_output_tokens: 1400,
@@ -153,6 +176,13 @@ Deno.serve(async (request: Request) => {
 
     const payload = await response.json();
     if (!response.ok) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "openai",
+        model: listingModel,
+        providerUsage: { status: response.status, code: payload?.error?.code || null },
+      });
+      reservationCompleted = true;
       console.error("OpenAI error", response.status, JSON.stringify(payload).slice(0, 1000));
       const errorCode = String(payload?.error?.code || "");
       const billingCodes = new Set([
@@ -179,8 +209,23 @@ Deno.serve(async (request: Request) => {
     if (!parsed.listing) throw new Error("INVALID_MODEL_OUTPUT");
     const listing = cleanListing(String(parsed.listing));
     if (!listing) throw new Error("INVALID_MODEL_OUTPUT");
-    return new Response(JSON.stringify({ listing }), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    await completeStudioUsage(user, reservationId, {
+      success: true,
+      provider: "openai",
+      model: listingModel,
+      providerUsage: payload?.usage || null,
+    });
+    reservationCompleted = true;
+    return new Response(JSON.stringify({ listing, access }), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
   } catch (error) {
+    if (user && reservationId && !reservationCompleted) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "openai",
+        model: listingModel,
+        providerUsage: { error: error instanceof Error ? error.message : "UNKNOWN" },
+      }).catch((completionError) => console.error("create-listing usage completion error", completionError));
+    }
     console.error("create-listing error", error);
     return errorResponse(error, cors);
   }

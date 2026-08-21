@@ -5,6 +5,8 @@ const configured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
 const supabase = configured ? createClient(config.supabaseUrl, config.supabasePublishableKey) : null;
 const state = {
   photos: [],
+  clientItemId: crypto.randomUUID(),
+  access: null,
   background: "white",
   processing: false,
   processedCount: 0,
@@ -36,6 +38,7 @@ const elements = {
   authButton: $("#auth-button"), authDialog: $("#auth-dialog"), authForm: $("#auth-form"),
   authEmail: $("#auth-email"), authPassword: $("#auth-password"), authMessage: $("#auth-message"),
   loginGate: $("#login-gate"), gateSignIn: $("#gate-signin"), gateMessage: $("#gate-message"),
+  usagePill: $("#usage-pill"), paywallDialog: $("#paywall-dialog"),
   emptyCreative: $("#empty-creative"), creativeLayout: $("#creative-layout"), creativeSourceStrip: $("#creative-source-strip"),
   creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
   referenceImage: $("#reference-image"), removeReference: $("#remove-reference"), creativeInstructions: $("#creative-instructions"),
@@ -59,34 +62,68 @@ if (configured) {
   $("#connection-copy").textContent = "Listing connection ready";
 }
 
-async function verifyOwnerSession(session) {
-  if (!configured || !session) return false;
+function applyAccess(access) {
+  if (!access) return;
+  state.access = access;
+  elements.usagePill.classList.remove("hidden");
+  if (access.owner) {
+    elements.usagePill.textContent = "OWNER · UNLIMITED";
+  } else {
+    const remaining = Math.max(0, Number(access.items_remaining || 0));
+    elements.usagePill.textContent = `${remaining} FREE ITEM${remaining === 1 ? "" : "S"} LEFT`;
+  }
+}
+
+function showPaywall() {
+  if (!elements.paywallDialog.open) elements.paywallDialog.showModal();
+}
+
+function handleApiProblem(problem = {}) {
+  if (problem.access) applyAccess(problem.access);
+  if (problem.code === "TRIAL_EXHAUSTED") showPaywall();
+}
+
+async function verifyStudioSession(session) {
+  if (!configured || !session) return null;
   try {
-    const response = await fetch(`${config.supabaseUrl}/functions/v1/create-listing`, {
+    const query = new URLSearchParams({ client_item_id: state.clientItemId });
+    const response = await fetch(`${config.supabaseUrl}/functions/v1/create-listing?${query}`, {
       method: "GET",
       headers: {
         apikey: config.supabasePublishableKey,
         Authorization: `Bearer ${session.access_token}`
       }
     });
-    return response.ok;
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.access || null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function refreshAccess() {
+  if (!state.session) return null;
+  const access = await verifyStudioSession(state.session);
+  if (access) applyAccess(access);
+  return access;
 }
 
 async function refreshSession(session) {
   document.body.classList.add("auth-pending");
-  const isOwner = await verifyOwnerSession(session);
-  state.session = isOwner ? session : null;
+  const access = await verifyStudioSession(session);
+  state.session = access ? session : null;
+  state.access = access;
   const locked = !state.session;
   document.body.classList.toggle("studio-locked", locked);
   document.body.classList.remove("auth-pending");
   elements.authButton.textContent = state.session ? "SIGN OUT" : "SIGN IN";
   elements.authButton.classList.toggle("signed-in", Boolean(state.session));
-  elements.gateMessage.textContent = session && !isOwner
-    ? "This account is not authorized for the private studio."
-    : "Sign in with the owner email to continue.";
+  elements.usagePill.classList.toggle("hidden", !state.session);
+  if (access) applyAccess(access);
+  elements.gateMessage.textContent = session && !access
+    ? "We couldn’t verify this account. Please sign in again."
+    : "Sign in or create your free beta account to continue.";
   if (configured) $("#connection-copy").textContent = state.session ? "Studio ready" : "Sign in required";
   render();
 }
@@ -267,6 +304,7 @@ function clearAllPhotos() {
     if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
   });
   state.photos = [];
+  state.clientItemId = crypto.randomUUID();
   state.processedCount = 0;
   removeCreativeReference();
   resetCreativeOutput();
@@ -281,6 +319,7 @@ function clearAllPhotos() {
   $("[data-tab='photos']").click();
   window.scrollTo({ top: 0, behavior: "smooth" });
   render();
+  void refreshAccess();
 }
 
 function render() {
@@ -565,6 +604,7 @@ async function removeBackgroundInCloud(photo) {
   const form = new FormData();
   form.append("image", compactImage, "product-photo.jpg");
   form.append("background", state.background);
+  form.append("client_item_id", state.clientItemId);
 
   const response = await fetch(`${config.supabaseUrl}/functions/v1/remove-product-background`, {
     method: "POST",
@@ -577,6 +617,7 @@ async function removeBackgroundInCloud(photo) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
+    handleApiProblem(payload);
     throw new Error(payload.error || "The cloud cleanup could not be completed.");
   }
   return await response.blob();
@@ -615,6 +656,7 @@ async function processPhotos() {
   state.processedCount = 0;
   state.processingTotal = 0;
   render();
+  await refreshAccess();
 }
 
 async function processSinglePhoto(photoId) {
@@ -659,6 +701,7 @@ async function processSinglePhoto(photoId) {
     state.processedCount = 0;
     state.processingTotal = 0;
     render();
+    await refreshAccess();
   }
 }
 
@@ -856,6 +899,7 @@ async function createListing() {
   elements.listingButton.disabled = true;
   elements.listingButton.textContent = "WRITING LISTING…";
   const body = new FormData();
+  body.append("client_item_id", state.clientItemId);
   const additionalInfo = elements.listingAdditional.value.trim();
   if (additionalInfo) body.append("additional_info", additionalInfo);
   const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
@@ -878,9 +922,11 @@ async function createListing() {
     });
     if (!response.ok) {
       const problem = await response.json().catch(() => ({}));
+      handleApiProblem(problem);
       throw new Error(problem.error || "The listing could not be generated. Please try again.");
     }
     const data = await response.json();
+    applyAccess(data.access);
     const listing = cleanListingText(data.listing);
     elements.listingOutput.textContent = listing;
     elements.listingOutput.classList.remove("hidden");
@@ -912,6 +958,7 @@ async function generateCreativeImage() {
   elements.creativeError.classList.add("hidden");
   render();
   const body = new FormData();
+  body.append("client_item_id", state.clientItemId);
   body.append("type", state.creativeType);
   body.append("instructions", elements.creativeInstructions.value.trim());
 
@@ -940,10 +987,12 @@ async function generateCreativeImage() {
     });
     if (!response.ok) {
       const problem = await response.json().catch(() => ({}));
+      handleApiProblem(problem);
       throw new Error(problem.error || "The creative image could not be generated. Please try again.");
     }
 
     const data = await response.json();
+    applyAccess(data.access);
     if (!data.image) throw new Error("The image generator returned no image. Please try again.");
     const blob = base64ToBlob(data.image, data.mimeType || "image/jpeg");
     const sequence = state.creativeResults.length + 1;
@@ -1076,6 +1125,8 @@ elements.authButton.addEventListener("click", async () => {
 });
 
 $("#dialog-close").addEventListener("click", () => elements.authDialog.close());
+$("#paywall-close").addEventListener("click", () => elements.paywallDialog.close());
+$("#paywall-done").addEventListener("click", () => elements.paywallDialog.close());
 
 elements.authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1095,7 +1146,7 @@ elements.authForm.addEventListener("submit", async (event) => {
 
 $("#signup-button").addEventListener("click", async () => {
   if (!supabase) return;
-  elements.authMessage.textContent = "Creating owner account…";
+  elements.authMessage.textContent = "Creating account…";
   const { data, error } = await supabase.auth.signUp({
     email: elements.authEmail.value.trim(),
     password: elements.authPassword.value,
@@ -1105,7 +1156,7 @@ $("#signup-button").addEventListener("click", async () => {
   } else if (!data.session) {
     elements.authMessage.textContent = "Check your email to confirm the account, then sign in.";
   } else {
-    elements.authMessage.textContent = "Owner account created.";
+    elements.authMessage.textContent = "Your free studio account is ready.";
     setTimeout(() => elements.authDialog.close(), 650);
   }
 });
