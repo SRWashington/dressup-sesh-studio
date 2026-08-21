@@ -49,7 +49,7 @@ function buildPrompt(type: string, productCount: number, referenceOnlyCount: num
   const referenceRule = hasReference
     ? `The final input image is an inspiration reference. Use it only for pose, framing, camera angle, setting, lighting mood or layout. Do not copy its product, garment, color, pattern, branding, hardware, person identity or face.`
     : "No separate inspiration image was supplied; choose a commercially useful composition yourself.";
-  const userDirection = instructions ? `Additional direction from the owner: ${instructions}` : "";
+  const userDirection = instructions ? `Additional direction from the user: ${instructions}` : "";
 
   return `Create one ${creative.label} for a resale listing and social commerce workflow.
 
@@ -142,27 +142,9 @@ Deno.serve(async (request: Request) => {
       reservationCompleted = true;
       console.error("OpenAI image error", response.status, JSON.stringify(payload).slice(0, 1200));
       const errorCode = String(payload?.error?.code || "");
-      const upstreamMessage = String(payload?.error?.message || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 240);
-      const billingCodes = new Set([
-        "credit_balance_exhausted",
-        "organization_spend_limit_exceeded",
-        "project_spend_limit_exceeded",
-        "organization_usage_limit_exceeded"
-      ]);
-      const message = response.status === 429 && billingCodes.has(errorCode)
-        ? "OpenAI image billing needs attention. Add credits or raise the project spending limit, then try again."
-        : response.status === 429
-          ? "OpenAI is temporarily rate-limiting image requests. Wait a minute and try again."
-          : response.status === 401
-            ? "The OpenAI API key was rejected. Replace OPENAI_API_KEY in Supabase and try again."
-            : response.status === 403
-              ? "OpenAI image access may require organization verification in the API dashboard."
-              : response.status === 400 && upstreamMessage
-                ? `OpenAI rejected an image setting: ${upstreamMessage}`
-              : "The creative image could not be generated. Please try again.";
+      const message = response.status === 429
+        ? "The creative image service is busy. Wait a minute and try again."
+        : "Creative image generation is temporarily unavailable. Please try again shortly.";
       return json({ error: message, code: errorCode || undefined }, response.status, cors);
     }
 
