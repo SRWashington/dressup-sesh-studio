@@ -143,11 +143,11 @@ export function errorResponse(error: unknown, headers: Record<string, string>) {
     : ["NOT_CONFIGURED", "ACCESS_SERVICE_ERROR"].includes(code) ? 503
     : 500;
   const message = code === "TRIAL_EXHAUSTED"
-    ? "You’ve completed your three free items. Paid beta access is coming next."
+    ? "You’ve completed your three free items. Additional monthly access is coming soon."
     : code === "OPERATION_LIMIT"
       ? "This item has reached the included limit for that tool. Start a new item or try a different step."
       : status === 503
-        ? "The studio is not fully configured yet."
+        ? "This service is temporarily unavailable. Please try again shortly."
         : status < 500
           ? "You do not have access to this studio."
           : "The request could not be completed.";

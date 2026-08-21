@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
+  <meta name="description" content="AI-powered product photo cleanup, marketplace listing copy and creative images for online resellers.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=beta-foundation-1">
-  <link rel="stylesheet" href="auth.css?v=beta-foundation-1">
+  <link rel="stylesheet" href="styles.css?v=marketplace-beta-1">
+  <link rel="stylesheet" href="auth.css?v=marketplace-beta-1">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .cloud-choice>span{min-width:72px;margin-right:6px;font-size:9px;font-weight:800;letter-spacing:.15em}
@@ -24,17 +24,37 @@
 </head>
 <body class="auth-pending">
   <section class="login-gate" id="login-gate" aria-labelledby="login-title">
-    <div class="login-card">
+    <header class="public-topbar">
       <div class="brand" aria-label="Dressup Sesh Studio">
         <span class="brand-mark">DS</span>
         <span><strong>DRESSUP SESH</strong><small>LISTING STUDIO</small></span>
       </div>
-      <p class="eyebrow">PRIVATE BETA</p>
-      <h1 id="login-title">Your resale studio starts here.</h1>
-      <p>Create a free account to process three complete items—from photo cleanup to listing copy and creative images.</p>
-      <div class="gate-actions">
-        <button class="primary" id="gate-signin">SIGN IN TO STUDIO</button>
-        <p class="gate-message" id="gate-message" aria-live="polite">Sign in or create your free beta account to continue.</p>
+      <button class="public-signin" id="gate-signin" type="button">SIGN IN</button>
+    </header>
+    <div class="public-landing">
+      <div class="public-hero">
+        <div>
+          <p class="eyebrow">AI-POWERED RESALE WORKFLOW</p>
+          <h1 id="login-title">From camera roll to ready to list.</h1>
+          <p class="public-lede">Turn one product photo set into clean marketplace images, searchable listing copy and campaign-ready creative assets.</p>
+          <div class="gate-actions">
+            <button class="primary" id="gate-create" type="button">TRY 3 ITEMS FREE</button>
+            <p class="gate-message" id="gate-message" aria-live="polite">No subscription required for the free trial.</p>
+          </div>
+        </div>
+        <div class="workflow-preview" aria-label="Dressup Sesh workflow">
+          <article><span>01</span><div><strong>Clean product photos</strong><p>Remove backgrounds, refine edges and keep reference-only details intact.</p></div></article>
+          <article><span>02</span><div><strong>Write marketplace copy</strong><p>Create accurate, searchable titles and descriptions from the same photo set.</p></div></article>
+          <article><span>03</span><div><strong>Create campaign images</strong><p>Generate fit, studio, social and editorial visuals without reshooting.</p></div></article>
+        </div>
+      </div>
+      <div class="public-trust">
+        <p class="eyebrow">HOW YOUR PHOTOS ARE HANDLED</p>
+        <div class="trust-grid">
+          <div><strong>Prepared on your device</strong><p>Your browser converts and resizes files before processing to reduce upload time.</p></div>
+          <div><strong>Sent only when you choose</strong><p>Selected photos are securely sent to cloud AI services only after you press a cleanup or generation button.</p></div>
+          <div><strong>Not stored as an image library</strong><p>Product photos are not saved in our database. Save or download your finished files before clearing the item or refreshing.</p></div>
+        </div>
       </div>
     </div>
   </section>
@@ -54,7 +74,7 @@
     <section class="intro">
       <p class="eyebrow">THE FAST TRACK FROM CAMERA ROLL TO CLOSET</p>
       <h1>Clean photos. Sharp copy.<br>Ready to list.</h1>
-      <p class="lede">Upload a full product set once. Get every photo back separately—plus a copy-ready Poshmark title and description in your exact format.</p>
+      <p class="lede">Upload a full product set once. Get every photo back separately—plus marketplace-ready title and description copy in your exact format.</p>
     </section>
 
     <nav class="mode-tabs" aria-label="Studio mode">
@@ -99,7 +119,7 @@
         <p class="save-hint">Save All Edited includes only finished background-removal results. Use Save Unedited on each Reference Only card; Download Record Set preserves the exact originals.</p>
       </div>
 
-      <div class="setup-note" id="setup-note"><strong>Fast cleanup without loading an AI model on your phone.</strong><span>Mark labels, measurements or detail shots as Reference Only to skip background removal, keep the original in your saved record set and prioritize it for copy and creative accuracy.</span></div>
+      <div class="setup-note" id="setup-note"><strong>Cloud cleanup, prepared by your browser.</strong><span>Your device converts and resizes photos first. When you press Remove Backgrounds, selected photos are securely sent for processing and returned to this page. Mark labels, measurements or detail shots as Reference Only to skip cleanup and prioritize their facts for copy and creative accuracy.</span></div>
     </section>
 
     <section class="workspace hidden" id="creative-panel">
@@ -134,7 +154,7 @@
             <div class="source-strip" id="creative-source-strip"></div>
           </div>
           <button class="primary wide" id="creative-generate" type="button">GENERATE ON-THE-BODY PHOTO</button>
-          <p class="microcopy">OpenAI image generation is billed per request. Nothing is generated until you press the button.</p>
+          <p class="microcopy">Nothing is sent or generated until you press the button.</p>
           <p class="error-text hidden" id="creative-error"></p>
         </div>
 
@@ -148,7 +168,7 @@
     </section>
 
     <section class="workspace hidden" id="listing-panel">
-      <div class="workspace-head"><div><p class="step">STEP 02</p><h2>Create the Poshmark listing</h2><p>The same uploaded photos become your copy-ready title and description.</p></div></div>
+      <div class="workspace-head"><div><p class="step">STEP 02</p><h2>Create the marketplace listing</h2><p>The same uploaded photos become your copy-ready title and description for resale platforms.</p></div></div>
       <button class="empty-listing" id="empty-listing"><span>＋</span><strong>Add product photos first</strong><small>Upload once, then return here for the listing.</small></button>
       <div class="listing-layout hidden" id="listing-layout">
         <div class="listing-source">
@@ -158,7 +178,7 @@
             <textarea id="listing-additional-info" maxlength="2000" rows="5" placeholder="Example: Measures 12 in. wide × 9 in. tall. Genuine leather. Includes dust bag. Small scratch on back corner…"></textarea>
           </label>
           <button class="primary wide" id="listing-button" disabled>CREATE TITLE + DESCRIPTION</button>
-          <p class="microcopy" id="listing-note">Connect Supabase to activate listing generation.</p>
+          <p class="microcopy" id="listing-note">Sign in to activate listing generation.</p>
         </div>
         <div class="listing-output">
           <div class="output-head"><span>COPY-READY OUTPUT</span><button id="copy-button" disabled>COPY ALL</button></div>
@@ -175,20 +195,21 @@
     <button class="dialog-close" id="dialog-close" aria-label="Close sign-in">×</button>
     <p class="eyebrow">STUDIO ACCESS</p>
     <h2>Sign in to your studio</h2>
-    <p>Sign in or create a free beta account to process your first three items.</p>
+    <p>Use an existing account or create one to process your first three items free.</p>
     <form id="auth-form">
       <label>Email<input id="auth-email" type="email" autocomplete="email" required></label>
       <label>Password<input id="auth-password" type="password" autocomplete="current-password" minlength="8" required></label>
       <button class="primary wide" type="submit">SIGN IN</button>
     </form>
     <button class="secondary wide" id="signup-button">CREATE FREE ACCOUNT</button>
+    <button class="text-button hidden" id="resend-button" type="button">RESEND CONFIRMATION EMAIL</button>
     <p class="auth-message" id="auth-message"></p>
   </dialog>
   <dialog class="paywall-dialog" id="paywall-dialog">
     <button class="dialog-close" id="paywall-close" aria-label="Close">×</button>
-    <p class="eyebrow">FREE BETA COMPLETE</p>
+    <p class="eyebrow">FREE TRIAL COMPLETE</p>
     <h2>You created three complete items.</h2>
-    <p>Your work is still yours to save and download. Paid beta access with additional monthly items is coming next.</p>
+    <p>Your work is still yours to save and download. Additional monthly access is coming soon.</p>
     <button class="primary wide" id="paywall-done" type="button">GOT IT</button>
   </dialog>
   <dialog class="photo-editor-dialog" id="photo-editor-dialog">
@@ -214,6 +235,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=beta-foundation-1"></script>
+  <script type="module" src="app.js?v=marketplace-beta-1"></script>
 </body>
 </html>
