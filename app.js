@@ -23,7 +23,8 @@ const state = {
   editorMode: "remove",
   editorStrokes: [],
   editorDrawing: false,
-  editorCurrentStroke: null
+  editorCurrentStroke: null,
+  pendingConfirmationEmail: ""
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -37,7 +38,8 @@ const elements = {
   outputPlaceholder: $("#output-placeholder"), listingError: $("#listing-error"), copyButton: $("#copy-button"),
   authButton: $("#auth-button"), authDialog: $("#auth-dialog"), authForm: $("#auth-form"),
   authEmail: $("#auth-email"), authPassword: $("#auth-password"), authMessage: $("#auth-message"),
-  loginGate: $("#login-gate"), gateSignIn: $("#gate-signin"), gateMessage: $("#gate-message"),
+  loginGate: $("#login-gate"), gateSignIn: $("#gate-signin"), gateCreate: $("#gate-create"), gateMessage: $("#gate-message"),
+  resendButton: $("#resend-button"),
   usagePill: $("#usage-pill"), paywallDialog: $("#paywall-dialog"),
   emptyCreative: $("#empty-creative"), creativeLayout: $("#creative-layout"), creativeSourceStrip: $("#creative-source-strip"),
   creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
@@ -67,7 +69,7 @@ function applyAccess(access) {
   state.access = access;
   elements.usagePill.classList.remove("hidden");
   if (access.owner) {
-    elements.usagePill.textContent = "OWNER · UNLIMITED";
+    elements.usagePill.textContent = "UNLIMITED ACCESS";
   } else {
     const remaining = Math.max(0, Number(access.items_remaining || 0));
     elements.usagePill.textContent = `${remaining} FREE ITEM${remaining === 1 ? "" : "S"} LEFT`;
@@ -123,7 +125,7 @@ async function refreshSession(session) {
   if (access) applyAccess(access);
   elements.gateMessage.textContent = session && !access
     ? "We couldn’t verify this account. Please sign in again."
-    : "Sign in or create your free beta account to continue.";
+    : "Try three complete items free, or sign in to continue.";
   if (configured) $("#connection-copy").textContent = state.session ? "Studio ready" : "Sign in required";
   render();
 }
@@ -351,7 +353,7 @@ function render() {
   elements.listingLayout.classList.toggle("hidden", !hasPhotos);
   elements.listingButton.disabled = !configured || !state.session || !usablePhotos.length || isPreparing;
   elements.listingNote.classList.toggle("hidden", configured && Boolean(state.session));
-  elements.listingNote.textContent = configured ? "Sign in to activate listing generation." : "Connect Supabase to activate listing generation.";
+  elements.listingNote.textContent = configured ? "Sign in to activate listing generation." : "Listing generation is temporarily unavailable.";
   elements.emptyCreative.classList.toggle("hidden", hasPhotos);
   elements.creativeLayout.classList.toggle("hidden", !hasPhotos);
   elements.creativeGenerate.disabled = !configured || !state.session || !productPhotos.length || isPreparing || state.creativeGenerating;
@@ -1110,10 +1112,13 @@ $$('[data-background]').forEach((button) => button.addEventListener("click", () 
   render();
 }));
 
-elements.gateSignIn.addEventListener("click", () => {
+function openAuthDialog() {
   elements.authMessage.textContent = "";
   elements.authDialog.showModal();
-});
+}
+
+elements.gateSignIn.addEventListener("click", openAuthDialog);
+elements.gateCreate.addEventListener("click", openAuthDialog);
 
 elements.authButton.addEventListener("click", async () => {
   if (state.session && supabase) {
@@ -1144,21 +1149,57 @@ elements.authForm.addEventListener("submit", async (event) => {
   }
 });
 
+function getAuthRedirectUrl() {
+  const redirect = new URL(window.location.href);
+  redirect.hash = "";
+  redirect.search = "";
+  if (!redirect.pathname.endsWith("/")) {
+    redirect.pathname = redirect.pathname.replace(/[^/]+$/, "");
+  }
+  return redirect.toString();
+}
+
 $("#signup-button").addEventListener("click", async () => {
   if (!supabase) return;
+  const email = elements.authEmail.value.trim();
+  if (!email || !elements.authPassword.value) {
+    elements.authMessage.textContent = "Enter an email and password first.";
+    return;
+  }
   elements.authMessage.textContent = "Creating account…";
   const { data, error } = await supabase.auth.signUp({
-    email: elements.authEmail.value.trim(),
+    email,
     password: elements.authPassword.value,
+    options: { emailRedirectTo: getAuthRedirectUrl() },
   });
   if (error) {
     elements.authMessage.textContent = error.message;
   } else if (!data.session) {
-    elements.authMessage.textContent = "Check your email to confirm the account, then sign in.";
+    state.pendingConfirmationEmail = email;
+    elements.resendButton.classList.remove("hidden");
+    elements.authMessage.textContent = `Confirmation sent to ${email}. Open the newest email, then return here to sign in.`;
   } else {
     elements.authMessage.textContent = "Your free studio account is ready.";
     setTimeout(() => elements.authDialog.close(), 650);
   }
+});
+
+elements.resendButton.addEventListener("click", async () => {
+  if (!supabase) return;
+  const email = state.pendingConfirmationEmail || elements.authEmail.value.trim();
+  if (!email) {
+    elements.authMessage.textContent = "Enter the email used to create the account.";
+    return;
+  }
+  elements.authMessage.textContent = "Sending a new confirmation email…";
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: { emailRedirectTo: getAuthRedirectUrl() },
+  });
+  elements.authMessage.textContent = error
+    ? error.message
+    : `A new confirmation email was sent to ${email}. Use the newest link only.`;
 });
 
 render();
