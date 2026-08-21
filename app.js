@@ -14,9 +14,12 @@ const state = {
   creativeReference: null,
   creativeReferenceUrl: "",
   creativeResultUrl: "",
+  creativeResultBlob: null,
   creativeGenerating: false,
   editorPhotoId: null,
   editorImage: null,
+  editorOriginalCanvas: null,
+  editorMode: "remove",
   editorStrokes: [],
   editorDrawing: false,
   editorCurrentStroke: null
@@ -38,9 +41,10 @@ const elements = {
   creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
   referenceImage: $("#reference-image"), removeReference: $("#remove-reference"), creativeInstructions: $("#creative-instructions"),
   creativeGenerate: $("#creative-generate"), creativeOutput: $(".creative-output"), creativePlaceholder: $("#creative-placeholder"),
-  creativeOutputImage: $("#creative-output-image"), creativeDownload: $("#creative-download"), creativeError: $("#creative-error"),
+  creativeOutputImage: $("#creative-output-image"), creativeDownload: $("#creative-download"), creativeSave: $("#creative-save"), creativeError: $("#creative-error"),
   editorDialog: $("#photo-editor-dialog"), editorCanvas: $("#photo-editor-canvas"), editorBrush: $("#editor-brush-size"),
   editorBrushOutput: $("#editor-brush-output"), editorUndo: $("#editor-undo"), editorReset: $("#editor-reset"),
+  editorRemove: $("#editor-mode-remove"), editorRestore: $("#editor-mode-restore"),
   editorCancel: $("#editor-cancel"), editorApply: $("#editor-apply")
 };
 
@@ -188,10 +192,12 @@ function removeCreativeReference() {
 function resetCreativeOutput() {
   if (state.creativeResultUrl) URL.revokeObjectURL(state.creativeResultUrl);
   state.creativeResultUrl = "";
+  state.creativeResultBlob = null;
   elements.creativeOutputImage.removeAttribute("src");
   elements.creativeOutputImage.classList.add("hidden");
   elements.creativeDownload.removeAttribute("href");
   elements.creativeDownload.classList.add("hidden");
+  elements.creativeSave.classList.add("hidden");
   elements.creativePlaceholder.classList.remove("hidden");
   elements.creativeError.textContent = "";
   elements.creativeError.classList.add("hidden");
@@ -223,7 +229,7 @@ function clearAllPhotos() {
 
 function render() {
   const hasPhotos = state.photos.length > 0;
-  const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
+  const usablePhotos = state.photos.filter((photo) => photo.preview && (!photo.error || photo.resultBlob));
   const pendingCleanupPhotos = usablePhotos.filter((photo) => !photo.resultBlob);
   const isPreparing = state.photos.some((photo) => photo.status === "converting" || photo.status === "preparing");
   elements.grid.classList.toggle("hidden", !hasPhotos);
@@ -263,7 +269,11 @@ function render() {
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
       <div class="photo-meta"><strong>PHOTO ${String(index + 1).padStart(2, "0")}</strong>
-      ${photo.resultUrl ? `<span class="photo-actions"><button class="photo-edit" type="button" data-edit="${photo.id}">EDIT</button><a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a></span>` : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
+      ${photo.resultUrl
+        ? `<span class="photo-actions"><button type="button" data-retry="${photo.id}">REPROCESS</button><button type="button" data-edit="${photo.id}">EDIT</button><button type="button" data-save="${photo.id}">SAVE</button><a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a></span>`
+        : photo.error
+          ? `<button class="photo-retry" type="button" data-retry="${photo.id}" ${state.processing ? "disabled" : ""}>TRY AGAIN</button>`
+          : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
       ${photo.error ? `<p class="error-text">${photo.error}</p>` : ""}
     </article>`).join("") + (state.photos.length < 20 ? `<button class="add-card" id="add-more"><span>＋</span>Add more</button>` : "");
 
@@ -277,6 +287,8 @@ function render() {
 
   $$('[data-remove]').forEach((button) => button.addEventListener("click", () => removePhoto(button.dataset.remove)));
   $$('[data-edit]').forEach((button) => button.addEventListener("click", () => { void openPhotoEditor(button.dataset.edit); }));
+  $$('[data-retry]').forEach((button) => button.addEventListener("click", () => { void processSinglePhoto(button.dataset.retry); }));
+  $$('[data-save]').forEach((button) => button.addEventListener("click", () => { void savePhotoToDevice(button.dataset.save); }));
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
 
@@ -289,10 +301,16 @@ function canvasToPng(canvas) {
 function drawEditorStroke(context, stroke) {
   if (!stroke?.points?.length) return;
   context.save();
-  context.globalCompositeOperation = "destination-out";
+  const restoring = stroke.mode === "restore";
+  context.globalCompositeOperation = restoring || state.background === "white" ? "source-over" : "destination-out";
   context.lineCap = "round";
   context.lineJoin = "round";
   context.lineWidth = stroke.size;
+  const paint = restoring
+    ? context.createPattern(state.editorOriginalCanvas, "no-repeat")
+    : "#ffffff";
+  context.strokeStyle = paint;
+  context.fillStyle = paint;
   if (stroke.points.length === 1) {
     context.beginPath();
     context.arc(stroke.points[0].x, stroke.points[0].y, stroke.size / 2, 0, Math.PI * 2);
@@ -330,6 +348,7 @@ function beginEditorStroke(event) {
   const rect = elements.editorCanvas.getBoundingClientRect();
   const scale = elements.editorCanvas.width / rect.width;
   const stroke = {
+    mode: state.editorMode,
     size: Number(elements.editorBrush.value) * scale,
     points: [editorPoint(event)]
   };
@@ -347,6 +366,7 @@ function continueEditorStroke(event) {
   const current = editorPoint(event);
   state.editorCurrentStroke.points.push(current);
   drawEditorStroke(elements.editorCanvas.getContext("2d"), {
+    mode: state.editorCurrentStroke.mode,
     size: state.editorCurrentStroke.size,
     points: [previous, current]
   });
@@ -364,6 +384,8 @@ function releasePhotoEditor() {
   state.editorImage?.close?.();
   state.editorPhotoId = null;
   state.editorImage = null;
+  state.editorOriginalCanvas = null;
+  state.editorMode = "remove";
   state.editorStrokes = [];
   state.editorDrawing = false;
   state.editorCurrentStroke = null;
@@ -382,8 +404,27 @@ async function openPhotoEditor(photoId) {
   state.editorImage = await createImageBitmap(photo.resultBlob);
   elements.editorCanvas.width = state.editorImage.width;
   elements.editorCanvas.height = state.editorImage.height;
+  const originalImage = await createImageBitmap(photo.file);
+  state.editorOriginalCanvas = document.createElement("canvas");
+  state.editorOriginalCanvas.width = state.editorImage.width;
+  state.editorOriginalCanvas.height = state.editorImage.height;
+  state.editorOriginalCanvas.getContext("2d").drawImage(
+    originalImage,
+    0,
+    0,
+    state.editorOriginalCanvas.width,
+    state.editorOriginalCanvas.height
+  );
+  originalImage.close();
+  setEditorMode("remove");
   redrawPhotoEditor();
   elements.editorDialog.showModal();
+}
+
+function setEditorMode(mode) {
+  state.editorMode = mode === "restore" ? "restore" : "remove";
+  elements.editorRemove.classList.toggle("selected", state.editorMode === "remove");
+  elements.editorRestore.classList.toggle("selected", state.editorMode === "restore");
 }
 
 async function applyPhotoEdit() {
@@ -519,6 +560,82 @@ async function processPhotos() {
   render();
 }
 
+async function processSinglePhoto(photoId) {
+  const photo = state.photos.find((item) => item.id === photoId);
+  if (!photo || state.processing) return;
+
+  state.processing = true;
+  state.processedCount = 0;
+  state.processingTotal = 1;
+  const previousBlob = photo.resultBlob || null;
+  const previousUrl = photo.resultUrl || "";
+  photo.error = "";
+  photo.status = "processing";
+  photo.statusLabel = "uploading securely";
+  render();
+
+  try {
+    if (!photo.preview) {
+      photo.file = photo.originalFile;
+      await preparePhoto(photo);
+      if (!photo.preview || photo.error) throw new Error(photo.error || "This photo could not be prepared.");
+      photo.status = "processing";
+      photo.statusLabel = "uploading securely";
+      photo.error = "";
+      render();
+    }
+    const cleanedBlob = await removeBackgroundInCloud(photo);
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    photo.resultBlob = cleanedBlob;
+    photo.resultUrl = URL.createObjectURL(cleanedBlob);
+    photo.status = "complete";
+    photo.statusLabel = "ready";
+  } catch (error) {
+    photo.resultBlob = previousBlob;
+    photo.resultUrl = previousUrl;
+    photo.status = "error";
+    photo.statusLabel = "try again";
+    photo.error = error?.message || "Couldn’t process this photo. Please try again.";
+    console.error("Single photo cleanup failed", error);
+  } finally {
+    state.processing = false;
+    state.processedCount = 0;
+    state.processingTotal = 0;
+    render();
+  }
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+async function saveBlobToDevice(blob, filename, title) {
+  const file = new File([blob], filename, { type: blob.type || "image/png" });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  triggerDownload(blob, filename);
+}
+
+async function savePhotoToDevice(photoId) {
+  const index = state.photos.findIndex((item) => item.id === photoId);
+  const photo = state.photos[index];
+  if (!photo?.resultBlob) return;
+  await saveBlobToDevice(photo.resultBlob, resultFileName(photo, index), "Dressup Sesh cleaned product photo");
+}
+
 async function downloadAllPhotos() {
   const completed = state.photos
     .map((photo, index) => ({ photo, index }))
@@ -537,14 +654,7 @@ async function downloadAllPhotos() {
       compression: "DEFLATE",
       compressionOptions: { level: 6 }
     });
-    const url = URL.createObjectURL(zipBlob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "dressup-sesh-clean-photos.zip";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    triggerDownload(zipBlob, "dressup-sesh-clean-photos.zip");
   } finally {
     render();
   }
@@ -685,6 +795,7 @@ async function generateCreativeImage() {
     if (!data.image) throw new Error("The image generator returned no image. Please try again.");
     const blob = base64ToBlob(data.image, data.mimeType || "image/jpeg");
     resetCreativeOutput();
+    state.creativeResultBlob = blob;
     state.creativeResultUrl = URL.createObjectURL(blob);
     elements.creativeOutputImage.src = state.creativeResultUrl;
     elements.creativeOutputImage.classList.remove("hidden");
@@ -692,6 +803,7 @@ async function generateCreativeImage() {
     elements.creativeDownload.href = state.creativeResultUrl;
     elements.creativeDownload.download = `dressup-sesh-${state.creativeType.replaceAll("_", "-")}.jpg`;
     elements.creativeDownload.classList.remove("hidden");
+    elements.creativeSave.classList.remove("hidden");
   } catch (error) {
     elements.creativeError.textContent = error?.message || "The creative image could not be generated. Please try again.";
     elements.creativeError.classList.remove("hidden");
@@ -714,11 +826,22 @@ elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.emptyCreative.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.creativeGenerate.addEventListener("click", generateCreativeImage);
+elements.creativeSave.addEventListener("click", () => {
+  if (!state.creativeResultBlob) return;
+  const extension = state.creativeResultBlob.type === "image/png" ? "png" : "jpg";
+  void saveBlobToDevice(
+    state.creativeResultBlob,
+    `dressup-sesh-${state.creativeType.replaceAll("_", "-")}.${extension}`,
+    "Dressup Sesh creative image"
+  );
+});
 elements.editorCanvas.addEventListener("pointerdown", beginEditorStroke);
 elements.editorCanvas.addEventListener("pointermove", continueEditorStroke);
 elements.editorCanvas.addEventListener("pointerup", endEditorStroke);
 elements.editorCanvas.addEventListener("pointercancel", endEditorStroke);
 elements.editorBrush.addEventListener("input", () => { elements.editorBrushOutput.textContent = elements.editorBrush.value; });
+elements.editorRemove.addEventListener("click", () => setEditorMode("remove"));
+elements.editorRestore.addEventListener("click", () => setEditorMode("restore"));
 elements.editorUndo.addEventListener("click", () => {
   state.editorStrokes.pop();
   redrawPhotoEditor();
