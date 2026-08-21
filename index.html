@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Product photo cleanup and copy-ready Poshmark listings for Dressup Sesh.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=reference-photos-1">
+  <link rel="stylesheet" href="styles.css?v=reference-photos-2">
   <link rel="stylesheet" href="auth.css?v=private-studio-1">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -92,10 +92,10 @@
           <button class="download-all" id="download-all" disabled>DOWNLOAD ALL</button>
           <button class="primary" id="process-button" disabled>REMOVE BACKGROUNDS</button>
         </div>
-        <p class="save-hint">Hold down any finished photo to save it individually.</p>
+        <p class="save-hint">Hold down any photo to save it individually. Reference Only photos stay unedited and are included in Save All and Download All.</p>
       </div>
 
-      <div class="setup-note" id="setup-note"><strong>Fast cleanup without loading an AI model on your phone.</strong><span>Mark labels, measurements or detail shots as Reference Only to skip background removal and prioritize them for copy and creative accuracy.</span></div>
+      <div class="setup-note" id="setup-note"><strong>Fast cleanup without loading an AI model on your phone.</strong><span>Mark labels, measurements or detail shots as Reference Only to skip background removal, keep the original in your saved record set and prioritize it for copy and creative accuracy.</span></div>
     </section>
 
     <section class="workspace hidden" id="creative-panel">
@@ -202,6 +202,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=reference-photos-1"></script>
+  <script type="module" src="app.js?v=reference-photos-2"></script>
 </body>
 </html>
