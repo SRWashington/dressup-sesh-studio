@@ -83,11 +83,18 @@ Deno.serve(async (request: Request) => {
     if (!images.length) {
       return new Response(JSON.stringify({ error: "At least one product image is required." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    const requestedReferenceCount = Number.parseInt(String(form.get("reference_count") || "0"), 10);
+    const referenceCount = Number.isFinite(requestedReferenceCount)
+      ? Math.max(0, Math.min(images.length, requestedReferenceCount))
+      : 0;
 
     const additionalInfoBlock = additionalInfo
       ? `\n\nOWNER-SUPPLIED REFERENCE INFORMATION (trusted facts for this item):\n${additionalInfo}\n\nUse all relevant owner-supplied facts naturally in the exact listing layout. Treat these facts as higher priority than visual inference when they conflict. Do not mention that reference information was supplied and do not create an extra notes section.`
       : "";
-    const content: Array<Record<string, unknown>> = [{ type: "input_text", text: `${prompt}${additionalInfoBlock}` }];
+    const referencePhotoBlock = referenceCount
+      ? `\n\nPHOTO ROLES: The first ${referenceCount} image${referenceCount === 1 ? " is" : "s are"} REFERENCE-ONLY evidence for labels, measurements, materials, condition details or other facts. Read them carefully and give their legible factual information priority. They are not cleaned listing photos, so do not describe rulers, measuring tapes, hands, backgrounds or staging objects as product features or included accessories. The remaining images show the product for appearance and presentation.`
+      : "";
+    const content: Array<Record<string, unknown>> = [{ type: "input_text", text: `${prompt}${referencePhotoBlock}${additionalInfoBlock}` }];
     for (const image of images) {
       if (!/^(image\/png|image\/jpeg|image\/webp|image\/gif)$/i.test(image.type)) {
         return new Response(JSON.stringify({ error: "Process HEIC photos first so listing analysis can use the JPEG results." }), { status: 415, headers: { ...cors, "Content-Type": "application/json" } });

@@ -29,7 +29,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const elements = {
   input: $("#file-input"), dropzone: $("#dropzone"), grid: $("#photo-grid"),
-  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), clearAll: $("#clear-all"),
+  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), saveAll: $("#save-all"), clearAll: $("#clear-all"),
   setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"), creativePanel: $("#creative-panel"),
   emptyListing: $("#empty-listing"), listingLayout: $("#listing-layout"), sourceStrip: $("#source-strip"),
   listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingAdditional: $("#listing-additional-info"), listingOutput: $("#listing-output"),
@@ -161,6 +161,7 @@ function addFiles(fileList) {
     preview: "",
     status: isHeicFile(file) ? "converting" : "preparing",
     statusLabel: isHeicFile(file) ? "preparing iPhone photo" : "preparing",
+    referenceOnly: false,
     resultUrl: "",
     error: ""
   }));
@@ -176,6 +177,17 @@ function removePhoto(id) {
     if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
   }
   state.photos = state.photos.filter((item) => item.id !== id);
+  render();
+}
+
+function toggleReferenceOnly(id) {
+  if (state.processing || state.creativeGenerating) return;
+  const photo = state.photos.find((item) => item.id === id);
+  if (!photo?.preview) return;
+  photo.referenceOnly = !photo.referenceOnly;
+  photo.error = "";
+  photo.status = photo.referenceOnly ? "reference" : photo.resultBlob ? "complete" : "ready";
+  photo.statusLabel = photo.referenceOnly ? "reference only" : photo.resultBlob ? "ready" : "ready";
   render();
 }
 
@@ -230,17 +242,20 @@ function clearAllPhotos() {
 function render() {
   const hasPhotos = state.photos.length > 0;
   const usablePhotos = state.photos.filter((photo) => photo.preview && (!photo.error || photo.resultBlob));
-  const pendingCleanupPhotos = usablePhotos.filter((photo) => !photo.resultBlob);
+  const productPhotos = usablePhotos.filter((photo) => !photo.referenceOnly);
+  const pendingCleanupPhotos = productPhotos.filter((photo) => !photo.resultBlob);
   const isPreparing = state.photos.some((photo) => photo.status === "converting" || photo.status === "preparing");
   elements.grid.classList.toggle("hidden", !hasPhotos);
   elements.actionBar.classList.toggle("hidden", !hasPhotos);
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
-  const completedPhotos = state.photos.filter((photo) => photo.resultBlob);
+  const completedPhotos = state.photos.filter((photo) => !photo.referenceOnly && photo.resultBlob);
   elements.process.disabled = !configured || !state.session || !pendingCleanupPhotos.length || state.processing || isPreparing;
   elements.downloadAll.disabled = !completedPhotos.length || state.processing;
+  elements.saveAll.disabled = !completedPhotos.length || state.processing;
   elements.clearAll.disabled = state.processing || state.creativeGenerating;
   elements.downloadAll.textContent = completedPhotos.length ? `DOWNLOAD ALL · ${completedPhotos.length}` : "DOWNLOAD ALL";
+  elements.saveAll.textContent = completedPhotos.length ? `SAVE ALL TO PHOTOS · ${completedPhotos.length}` : "SAVE ALL TO PHOTOS";
   elements.process.textContent = state.processing
     ? `PROCESSING ${state.processedCount + 1} OF ${state.processingTotal}…`
     : isPreparing
@@ -255,40 +270,43 @@ function render() {
   elements.listingNote.textContent = configured ? "Sign in to activate listing generation." : "Connect Supabase to activate listing generation.";
   elements.emptyCreative.classList.toggle("hidden", hasPhotos);
   elements.creativeLayout.classList.toggle("hidden", !hasPhotos);
-  elements.creativeGenerate.disabled = !configured || !state.session || !usablePhotos.length || isPreparing || state.creativeGenerating;
+  elements.creativeGenerate.disabled = !configured || !state.session || !productPhotos.length || isPreparing || state.creativeGenerating;
   elements.creativeGenerate.textContent = state.creativeGenerating ? "GENERATING…" : creativeLabels[state.creativeType];
   elements.creativeOutput.classList.toggle("generating", state.creativeGenerating);
+  const listingSources = selectPhotosForRequest(usablePhotos, 8, true);
+  const creativeSources = selectPhotosForRequest(usablePhotos, 6, false);
 
   elements.grid.innerHTML = state.photos.map((photo, index) => `
     <article class="photo-card">
       <div class="photo-frame ${state.background === "transparent" ? "checker" : ""}">
-        ${photo.resultUrl || photo.preview
-          ? `<img src="${photo.resultUrl || photo.preview}" alt="Uploaded product view ${index + 1}">`
+        ${(photo.referenceOnly ? photo.preview : photo.resultUrl || photo.preview)
+          ? `<img src="${photo.referenceOnly ? photo.preview : photo.resultUrl || photo.preview}" alt="Uploaded product view ${index + 1}">`
           : `<div class="photo-preparing">Preparing<br>iPhone photo…</div>`}
-        <span class="photo-status ${photo.status}">${photo.statusLabel || photo.status}</span>
+        <span class="photo-status ${photo.referenceOnly ? "reference" : photo.status}">${photo.referenceOnly ? "reference only" : photo.statusLabel || photo.status}</span>
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
       <div class="photo-meta"><strong>PHOTO ${String(index + 1).padStart(2, "0")}</strong>
-      ${photo.resultUrl
-        ? `<span class="photo-actions"><button type="button" data-retry="${photo.id}">REPROCESS</button><button type="button" data-edit="${photo.id}">EDIT</button><button type="button" data-save="${photo.id}">SAVE</button><a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a></span>`
+      ${photo.resultUrl && !photo.referenceOnly
+        ? `<span class="photo-actions"><button type="button" data-retry="${photo.id}">REPROCESS</button><button type="button" data-edit="${photo.id}">EDIT</button><a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a></span>`
         : photo.error
           ? `<button class="photo-retry" type="button" data-retry="${photo.id}" ${state.processing ? "disabled" : ""}>TRY AGAIN</button>`
           : `<span>${Math.max(1, Math.round(photo.file.size / 1024))} KB</span>`}</div>
+      <button class="reference-toggle ${photo.referenceOnly ? "selected" : ""}" type="button" data-reference-only="${photo.id}" ${!photo.preview || state.processing || state.creativeGenerating ? "disabled" : ""}>${photo.referenceOnly ? "REFERENCE ONLY ✓" : "MARK REFERENCE ONLY"}</button>
       ${photo.error ? `<p class="error-text">${photo.error}</p>` : ""}
     </article>`).join("") + (state.photos.length < 20 ? `<button class="add-card" id="add-more"><span>＋</span>Add more</button>` : "");
 
-  elements.sourceStrip.innerHTML = usablePhotos.slice(0, 6).map((photo, index) =>
-    `<img src="${photo.preview}" alt="Listing source ${index + 1}">`).join("") +
-    (usablePhotos.length > 6 ? `<span>+${usablePhotos.length - 6}</span>` : "");
+  elements.sourceStrip.innerHTML = listingSources.map((photo, index) =>
+    `<img class="${photo.referenceOnly ? "reference-source" : ""}" src="${photo.preview}" alt="${photo.referenceOnly ? "Reference-only" : "Product"} listing source ${index + 1}" title="${photo.referenceOnly ? "Reference Only" : "Product photo"}">`).join("") +
+    (usablePhotos.length > listingSources.length ? `<span>+${usablePhotos.length - listingSources.length}</span>` : "");
 
-  elements.creativeSourceStrip.innerHTML = usablePhotos.slice(0, 6).map((photo, index) =>
-    `<img src="${photo.preview}" alt="Creative product source ${index + 1}">`).join("") +
-    (usablePhotos.length > 6 ? `<span>+${usablePhotos.length - 6}</span>` : "");
+  elements.creativeSourceStrip.innerHTML = creativeSources.map((photo, index) =>
+    `<img class="${photo.referenceOnly ? "reference-source" : ""}" src="${photo.preview}" alt="${photo.referenceOnly ? "Reference-only" : "Product"} creative source ${index + 1}" title="${photo.referenceOnly ? "Reference Only" : "Product photo"}">`).join("") +
+    (usablePhotos.length > creativeSources.length ? `<span>+${usablePhotos.length - creativeSources.length}</span>` : "");
 
   $$('[data-remove]').forEach((button) => button.addEventListener("click", () => removePhoto(button.dataset.remove)));
   $$('[data-edit]').forEach((button) => button.addEventListener("click", () => { void openPhotoEditor(button.dataset.edit); }));
   $$('[data-retry]').forEach((button) => button.addEventListener("click", () => { void processSinglePhoto(button.dataset.retry); }));
-  $$('[data-save]').forEach((button) => button.addEventListener("click", () => { void savePhotoToDevice(button.dataset.save); }));
+  $$('[data-reference-only]').forEach((button) => button.addEventListener("click", () => toggleReferenceOnly(button.dataset.referenceOnly)));
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
 
@@ -520,7 +538,7 @@ async function removeBackgroundInCloud(photo) {
 }
 
 async function processPhotos() {
-  const processablePhotos = state.photos.filter((photo) => photo.preview && !photo.error && !photo.resultBlob);
+  const processablePhotos = state.photos.filter((photo) => photo.preview && !photo.referenceOnly && !photo.error && !photo.resultBlob);
   if (!processablePhotos.length || state.processing) return;
   state.processing = true;
   state.processedCount = 0;
@@ -562,7 +580,7 @@ async function processPhotos() {
 
 async function processSinglePhoto(photoId) {
   const photo = state.photos.find((item) => item.id === photoId);
-  if (!photo || state.processing) return;
+  if (!photo || photo.referenceOnly || state.processing) return;
 
   state.processing = true;
   state.processedCount = 0;
@@ -629,17 +647,41 @@ async function saveBlobToDevice(blob, filename, title) {
   triggerDownload(blob, filename);
 }
 
-async function savePhotoToDevice(photoId) {
-  const index = state.photos.findIndex((item) => item.id === photoId);
-  const photo = state.photos[index];
-  if (!photo?.resultBlob) return;
-  await saveBlobToDevice(photo.resultBlob, resultFileName(photo, index), "Dressup Sesh cleaned product photo");
+function completedProductPhotos() {
+  return state.photos
+    .map((photo, index) => ({ photo, index }))
+    .filter(({ photo }) => !photo.referenceOnly && photo.resultBlob);
+}
+
+async function saveAllPhotos() {
+  const completed = completedProductPhotos();
+  if (!completed.length) return;
+  const files = completed.map(({ photo, index }) => new File(
+    [photo.resultBlob],
+    resultFileName(photo, index),
+    { type: photo.resultBlob.type || "image/png" }
+  ));
+
+  if (!navigator.share || !navigator.canShare?.({ files })) {
+    window.alert("This device cannot save several photos at once. Use Download All to create one ZIP instead.");
+    return;
+  }
+
+  elements.saveAll.disabled = true;
+  elements.saveAll.textContent = "OPENING PHOTOS…";
+  try {
+    await navigator.share({ files, title: "Dressup Sesh cleaned product photos" });
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      window.alert("The photos could not be opened for saving. Please try Download All instead.");
+    }
+  } finally {
+    render();
+  }
 }
 
 async function downloadAllPhotos() {
-  const completed = state.photos
-    .map((photo, index) => ({ photo, index }))
-    .filter(({ photo }) => photo.resultBlob);
+  const completed = completedProductPhotos();
   if (!completed.length || typeof window.JSZip !== "function") return;
 
   elements.downloadAll.disabled = true;
@@ -682,13 +724,28 @@ async function prepareListingImage(source) {
   });
 }
 
-function selectListingPhotos(photos, maximum = 8) {
-  if (photos.length <= maximum) return photos;
+function selectEvenly(photos, maximum) {
+  if (photos.length <= maximum) return [...photos];
   const lastIndex = photos.length - 1;
   return Array.from({ length: maximum }, (_, index) => {
     const sourceIndex = Math.round((index * lastIndex) / (maximum - 1));
     return photos[sourceIndex];
   });
+}
+
+function selectPhotosForRequest(photos, maximum, referenceFirst = true) {
+  const references = photos.filter((photo) => photo.referenceOnly);
+  const products = photos.filter((photo) => !photo.referenceOnly);
+  const reservedReferences = Math.min(references.length, Math.floor(maximum / 2));
+  const selectedReferences = selectEvenly(references, reservedReferences);
+  const selectedProducts = selectEvenly(products, Math.min(products.length, maximum - selectedReferences.length));
+  const remaining = maximum - selectedReferences.length - selectedProducts.length;
+  const extraReferences = remaining > 0
+    ? references.filter((photo) => !selectedReferences.includes(photo)).slice(0, remaining)
+    : [];
+  return referenceFirst
+    ? [...selectedReferences, ...extraReferences, ...selectedProducts]
+    : [...selectedProducts, ...selectedReferences, ...extraReferences];
 }
 
 function cleanListingText(value = "") {
@@ -714,13 +771,16 @@ async function createListing() {
   const additionalInfo = elements.listingAdditional.value.trim();
   if (additionalInfo) body.append("additional_info", additionalInfo);
   const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
-  const selectedPhotos = selectListingPhotos(usablePhotos);
+  const selectedPhotos = selectPhotosForRequest(usablePhotos, 8, true);
+  const referenceCount = selectedPhotos.filter((photo) => photo.referenceOnly).length;
+  body.append("reference_count", String(referenceCount));
   try {
     for (const [index, photo] of selectedPhotos.entries()) {
       elements.listingButton.textContent = `PREPARING ${index + 1} OF ${selectedPhotos.length}…`;
-      const source = photo.resultBlob || photo.file;
+      const source = photo.referenceOnly ? photo.file : photo.resultBlob || photo.file;
       const compactImage = await prepareListingImage(source);
-      body.append("images", compactImage, `listing-photo-${index + 1}.jpg`);
+      const role = photo.referenceOnly ? "reference" : "product";
+      body.append("images", compactImage, `${role}-${index + 1}.jpg`);
     }
     elements.listingButton.textContent = "WRITING LISTING…";
     const response = await fetch(`${config.supabaseUrl}/functions/v1/create-listing`, {
@@ -757,7 +817,8 @@ function base64ToBlob(value, mimeType = "image/jpeg") {
 async function generateCreativeImage() {
   if (!configured || !state.session || !state.photos.length || state.creativeGenerating) return;
   const usablePhotos = state.photos.filter((photo) => photo.preview && !photo.error);
-  if (!usablePhotos.length) return;
+  const productPhotos = usablePhotos.filter((photo) => !photo.referenceOnly);
+  if (!productPhotos.length) return;
 
   state.creativeGenerating = true;
   elements.creativeError.classList.add("hidden");
@@ -767,11 +828,14 @@ async function generateCreativeImage() {
   body.append("instructions", elements.creativeInstructions.value.trim());
 
   try {
-    const selectedPhotos = selectListingPhotos(usablePhotos, 6);
+    const selectedPhotos = selectPhotosForRequest(usablePhotos, 6, false);
+    const selectedProductCount = selectedPhotos.filter((photo) => !photo.referenceOnly).length;
+    body.append("product_count", String(selectedProductCount));
     for (const [index, photo] of selectedPhotos.entries()) {
-      elements.creativeGenerate.textContent = `PREPARING PRODUCT ${index + 1} OF ${selectedPhotos.length}…`;
+      elements.creativeGenerate.textContent = `PREPARING SOURCE ${index + 1} OF ${selectedPhotos.length}…`;
       const compactImage = await prepareListingImage(photo.file);
-      body.append("images", compactImage, `product-${index + 1}.jpg`);
+      const role = photo.referenceOnly ? "reference" : "product";
+      body.append("images", compactImage, `${role}-${index + 1}.jpg`);
     }
 
     if (state.creativeReference) {
@@ -821,6 +885,7 @@ elements.dropzone.addEventListener("drop", (event) => { event.preventDefault(); 
 elements.input.addEventListener("change", () => { addFiles(elements.input.files); elements.input.value = ""; });
 elements.process.addEventListener("click", processPhotos);
 elements.downloadAll.addEventListener("click", downloadAllPhotos);
+elements.saveAll.addEventListener("click", saveAllPhotos);
 elements.clearAll.addEventListener("click", clearAllPhotos);
 elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
