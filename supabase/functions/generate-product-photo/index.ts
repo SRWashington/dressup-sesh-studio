@@ -1,5 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { corsHeaders, errorResponse, requireOwner } from "../_shared/security.ts";
+import {
+  completeStudioUsage,
+  corsHeaders,
+  errorResponse,
+  requireUser,
+  reserveStudioUsage,
+  type StudioUser,
+} from "../_shared/security.ts";
+
+const creativeModel = "gpt-image-2";
 
 const creativePrompts: Record<string, { label: string; size: string; direction: string }> = {
   on_body: {
@@ -62,12 +71,19 @@ Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: cors });
 
+  let user: StudioUser | null = null;
+  let reservationId = 0;
+  let reservationCompleted = false;
   try {
-    const user = await requireOwner(request);
+    user = await requireUser(request);
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) throw new Error("NOT_CONFIGURED");
 
     const form = await request.formData();
+    const clientItemId = String(form.get("client_item_id") || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientItemId)) {
+      return json({ error: "Start a new item and try again." }, 400, cors);
+    }
     const type = String(form.get("type") || "");
     const creative = creativePrompts[type];
     if (!creative) return json({ error: "Choose a valid creative image format." }, 400, cors);
@@ -91,8 +107,11 @@ Deno.serve(async (request: Request) => {
     }
     const instructions = String(form.get("instructions") || "").trim().slice(0, 500);
 
+    const access = await reserveStudioUsage(user, clientItemId, "creative_image");
+    reservationId = Number(access.reservation_id || 0);
+
     const upstream = new FormData();
-    upstream.append("model", "gpt-image-2");
+    upstream.append("model", creativeModel);
     images.forEach((image, index) => {
       const role = index < productCount ? "product" : "reference-only";
       upstream.append("image[]", image, `${role}-${index + 1}.jpg`);
@@ -114,6 +133,13 @@ Deno.serve(async (request: Request) => {
     });
     const payload = await response.json();
     if (!response.ok) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "openai",
+        model: creativeModel,
+        providerUsage: { status: response.status, code: payload?.error?.code || null },
+      });
+      reservationCompleted = true;
       console.error("OpenAI image error", response.status, JSON.stringify(payload).slice(0, 1200));
       const errorCode = String(payload?.error?.code || "");
       const upstreamMessage = String(payload?.error?.message || "")
@@ -142,13 +168,29 @@ Deno.serve(async (request: Request) => {
 
     const image = payload?.data?.[0]?.b64_json;
     if (!image) throw new Error("INVALID_IMAGE_OUTPUT");
+    await completeStudioUsage(user, reservationId, {
+      success: true,
+      provider: "openai",
+      model: creativeModel,
+      providerUsage: payload?.usage || null,
+    });
+    reservationCompleted = true;
     return json({
       image,
       mimeType: "image/jpeg",
       format: type,
-      usage: payload?.usage || null
+      usage: payload?.usage || null,
+      access,
     }, 200, cors);
   } catch (error) {
+    if (user && reservationId && !reservationCompleted) {
+      await completeStudioUsage(user, reservationId, {
+        success: false,
+        provider: "openai",
+        model: creativeModel,
+        providerUsage: { error: error instanceof Error ? error.message : "UNKNOWN" },
+      }).catch((completionError) => console.error("generate-product-photo usage completion error", completionError));
+    }
     console.error("generate-product-photo error", error);
     return errorResponse(error, cors);
   }
