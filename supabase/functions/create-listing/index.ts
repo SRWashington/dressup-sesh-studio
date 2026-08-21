@@ -5,7 +5,7 @@ const prompt = `You are Dressup Sesh Listing Studio, a precision Poshmark listin
 
 Study every supplied photo as one product. Return ONLY a finished listing in this exact layout:
 
-[Brand + model/style + color + material + item type + size]
+[SEO-focused title: Brand + confirmed model/style + color + material + high-intent item type + useful size only]
 
 [Product paragraph identifying the item, color, material, silhouette and distinctive design features.]
 
@@ -22,11 +22,14 @@ Measurements: [all legible product dimensions and units shown in measurement pho
 Keywords: [comma-separated search phrases]
 
 Estimated era: [cautious estimate]
-Approx. original retail: [$XX–$XX]
+[Original MSRP: $XX when an exact price is legible in a supplied photo or screenshot; otherwise Approx. original retail: $XX–$XX]
 
 Rules:
 - Begin with the title itself on the first line and end immediately after original retail.
 - Keep the title on one line, followed by one blank line and then the description.
+- Write the title in Title Case. The first letter of every title word must be capitalized, including a brand that is normally styled in lowercase.
+- Make the title search-optimized: lead with the brand and confirmed model/style, then use accurate high-intent buyer terms for category, color, material, silhouette and genuinely relevant trend or aesthetic. Prefer specific searchable terms over generic filler.
+- Do not put “One Size” or “OS” in the title. Keep a verified size in the Size line when useful, but do not let a generic size displace stronger searchable title terms.
 - Never include “Title” or “Description” labels or headings.
 - Never use Markdown, asterisks or bold formatting anywhere.
 - Never add introductions, explanations, notes, questions, confidence, product ID, key details, pricing advice, suggested listing price, photo recommendations, checklists, bullets, tables or READY TO POST.
@@ -36,18 +39,34 @@ Rules:
 - Describe leather grain or finish only when it is unmistakably visible. Do not infer pebbled, smooth, saffiano or other texture from the product category.
 - Read labels and measurement photos carefully. Omit entire lines for facts that cannot be verified or reasonably inferred; never write “not visible,” “unknown” or similar placeholders.
 - Use “approx.” for measurements read from photos.
-- Describe only wear visible in the photographs.
+- If no flaws or wear are visible, assume good condition and write exactly “Good condition. No wear visible.” If the item is visibly new with tags, state that first and use “No wear visible,” never “no wear visible in the photographs” or similar hedging.
+- If flaws or wear are visible, describe only those specific visible issues and do not add unverified flaws.
+- When a supplied tag, receipt or original-retail screenshot shows one exact MSRP, write “Original MSRP: $XX” with that exact amount. Never turn one known price into a range or write a duplicate range such as “$38–$38.” Use an approximate range only when no exact documented MSRP is supplied.
 - Do not call an item vintage unless its age supports the term, and never call it rare without proof.`;
 
 function cleanListing(value: string) {
-  return value
+  const cleaned = value
     .replace(/\r\n/g, "\n")
     .replace(/\*/g, "")
     .replace(/^[ \t]*Title[ \t]*:[ \t]*/gim, "")
     .replace(/^[ \t]*Description[ \t]*:[ \t]*/gim, "")
+    .replace(/\bno visible wear (?:noted )?(?:in|from) (?:the )?(?:supplied )?(?:photos|photographs|images)\.?/gi, "No wear visible.")
+    .replace(/\bno wear visible (?:in|from) (?:the )?(?:supplied )?(?:photos|photographs|images)\.?/gi, "No wear visible.")
+    .replace(/^(?:Approx\. original retail|Original MSRP):[ \t]*\$([0-9][0-9,]*(?:\.\d{2})?)[ \t]*[–—-][ \t]*\$\1[ \t]*$/gim, (_match, amount) => `Original MSRP: $${amount}`)
+    .replace(/\$([0-9][0-9,]*(?:\.\d{2})?)[ \t]*[–—-][ \t]*\$\1\b/g, (_match, amount) => `$${amount}`)
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  const lines = cleaned.split("\n");
+  const titleIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (titleIndex >= 0) {
+    lines[titleIndex] = lines[titleIndex]
+      .replace(/(^|[\s(/&+–—-])([a-z])/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`)
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+  }
+  return lines.join("\n").trim();
 }
 
 function toBase64(bytes: Uint8Array) {
