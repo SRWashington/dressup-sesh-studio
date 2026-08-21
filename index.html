@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="AI-powered product photo cleanup, marketplace listing copy and creative images for online resellers.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=mobile-compact-1">
-  <link rel="stylesheet" href="auth.css?v=mobile-compact-1">
+  <link rel="stylesheet" href="styles.css?v=mobile-final-2">
+  <link rel="stylesheet" href="auth.css?v=mobile-final-2">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .cloud-choice>span{min-width:72px;margin-right:6px;font-size:9px;font-weight:800;letter-spacing:.15em}
@@ -181,14 +181,14 @@
           </article>
         </section>
       </section>
-      <div class="public-trust">
-        <p class="eyebrow">HOW YOUR PHOTOS ARE HANDLED</p>
+      <details class="public-trust technical-details">
+        <summary><span>HOW IT WORKS</span><small>Photo handling and privacy</small></summary>
         <div class="trust-grid">
           <div><strong>Prepared on your device</strong><p>Your browser converts and resizes files before processing to reduce upload time.</p></div>
           <div><strong>Sent only when you choose</strong><p>Selected photos are securely sent to cloud AI services only after you press a cleanup or generation button.</p></div>
           <div><strong>Not stored as an image library</strong><p>Product photos are not saved in our database. Save or download your finished files before clearing the item or refreshing.</p></div>
         </div>
-      </div>
+      </details>
     </div>
   </section>
   <main class="app-shell" id="top">
@@ -252,7 +252,8 @@
         <p class="save-hint">Save All Edited includes only finished background-removal results. Use Save Unedited on each Reference Only card; Download Record Set preserves the exact originals.</p>
       </div>
 
-      <div class="setup-note" id="setup-note"><strong>Cloud cleanup, prepared by your browser.</strong><span>Your device converts and resizes photos first. When you press Remove Backgrounds, selected photos are securely sent for processing and returned to this page. Mark labels, measurements or detail shots as Reference Only to skip cleanup and prioritize their facts for copy and creative accuracy.</span></div>
+      <p class="setup-guidance">Upload the photos you want cleaned. Mark labels, measurements or detail shots as Reference Only.</p>
+      <details class="setup-note technical-details" id="setup-note"><summary>HOW IT WORKS</summary><div><strong>Cloud cleanup, prepared by your browser.</strong><span>Your device converts and resizes photos first. When you press Remove Backgrounds, selected photos are securely sent for processing and returned to this page. Reference Only photos skip cleanup and their facts are prioritized for copy and creative accuracy.</span></div></details>
     </section>
 
     <section class="workspace hidden" id="creative-panel">
