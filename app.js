@@ -28,7 +28,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const elements = {
   input: $("#file-input"), dropzone: $("#dropzone"), grid: $("#photo-grid"),
-  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), saveAll: $("#save-all"), saveReferences: $("#save-references"), clearAll: $("#clear-all"),
+  count: $("#photo-count"), actionBar: $("#action-bar"), process: $("#process-button"), downloadAll: $("#download-all"), saveAll: $("#save-all"), clearAll: $("#clear-all"),
   setupNote: $("#setup-note"), listingPanel: $("#listing-panel"), photosPanel: $("#photos-panel"), creativePanel: $("#creative-panel"),
   emptyListing: $("#empty-listing"), listingLayout: $("#listing-layout"), sourceStrip: $("#source-strip"),
   listingButton: $("#listing-button"), listingNote: $("#listing-note"), listingAdditional: $("#listing-additional-info"), listingOutput: $("#listing-output"),
@@ -294,16 +294,13 @@ function render() {
   elements.count.classList.toggle("hidden", !hasPhotos);
   elements.count.textContent = `${state.photos.length} PHOTO${state.photos.length === 1 ? "" : "S"}`;
   const recordPhotos = savableRecordPhotos();
-  const referenceRecords = recordPhotos.filter(({ photo }) => photo.referenceOnly);
+  const editedPhotos = recordPhotos.filter(({ photo }) => !photo.referenceOnly);
   elements.process.disabled = !configured || !state.session || !pendingCleanupPhotos.length || state.processing || isPreparing;
   elements.downloadAll.disabled = !recordPhotos.length || state.processing || isPreparing;
-  elements.saveAll.disabled = !recordPhotos.length || state.processing || isPreparing;
-  elements.saveReferences.classList.toggle("hidden", !referenceRecords.length);
-  elements.saveReferences.disabled = !referenceRecords.length || state.processing || isPreparing;
+  elements.saveAll.disabled = !editedPhotos.length || state.processing || isPreparing;
   elements.clearAll.disabled = state.processing || state.creativeGenerating;
-  elements.downloadAll.textContent = recordPhotos.length ? `DOWNLOAD ALL · ${recordPhotos.length}` : "DOWNLOAD ALL";
-  elements.saveAll.textContent = recordPhotos.length ? `SAVE ALL TO PHOTOS · ${recordPhotos.length}` : "SAVE ALL TO PHOTOS";
-  elements.saveReferences.textContent = referenceRecords.length ? `SAVE REFERENCE PHOTOS · ${referenceRecords.length}` : "SAVE REFERENCE PHOTOS";
+  elements.downloadAll.textContent = recordPhotos.length ? `DOWNLOAD RECORD SET · ${recordPhotos.length}` : "DOWNLOAD RECORD SET";
+  elements.saveAll.textContent = editedPhotos.length ? `SAVE ALL EDITED · ${editedPhotos.length}` : "SAVE ALL EDITED";
   elements.process.textContent = state.processing
     ? `PROCESSING ${state.processedCount + 1} OF ${state.processingTotal}…`
     : isPreparing
@@ -335,7 +332,9 @@ function render() {
         <button class="remove" data-remove="${photo.id}" aria-label="Remove photo ${index + 1}">×</button>
       </div>
       <div class="photo-meta"><strong>PHOTO ${String(index + 1).padStart(2, "0")}</strong>
-      ${photo.resultUrl && !photo.referenceOnly
+      ${photo.referenceOnly
+        ? `<span class="photo-actions"><button type="button" data-save-reference="${photo.id}">SAVE UNEDITED</button></span>`
+        : photo.resultUrl
         ? `<span class="photo-actions"><button type="button" data-retry="${photo.id}">REPROCESS</button><button type="button" data-edit="${photo.id}">EDIT</button><a href="${photo.resultUrl}" download="${resultFileName(photo, index)}">DOWNLOAD</a></span>`
         : photo.error
           ? `<button class="photo-retry" type="button" data-retry="${photo.id}" ${state.processing ? "disabled" : ""}>TRY AGAIN</button>`
@@ -355,6 +354,7 @@ function render() {
   $$('[data-remove]').forEach((button) => button.addEventListener("click", () => removePhoto(button.dataset.remove)));
   $$('[data-edit]').forEach((button) => button.addEventListener("click", () => { void openPhotoEditor(button.dataset.edit); }));
   $$('[data-retry]').forEach((button) => button.addEventListener("click", () => { void processSinglePhoto(button.dataset.retry); }));
+  $$('[data-save-reference]').forEach((button) => button.addEventListener("click", () => { void saveSingleReferencePhoto(button.dataset.saveReference); }));
   $$('[data-reference-only]').forEach((button) => button.addEventListener("click", () => toggleReferenceOnly(button.dataset.referenceOnly)));
   $("#add-more")?.addEventListener("click", () => elements.input.click());
 }
@@ -530,10 +530,6 @@ function canvasToJpeg(canvas, quality) {
   });
 }
 
-function wait(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 async function prepareBackgroundImage(source) {
   const image = await createImageBitmap(source);
   let maxDimension = 1600;
@@ -614,12 +610,6 @@ async function processPhotos() {
       console.error("Cloud background removal failed", error);
     }
     render();
-    if (index < processablePhotos.length - 1) {
-      const nextPhoto = processablePhotos[index + 1];
-      nextPhoto.statusLabel = "waiting for cloud slot";
-      render();
-      await wait(4000);
-    }
   }
   state.processing = false;
   state.processedCount = 0;
@@ -716,7 +706,7 @@ function savableRecordPhotos() {
 }
 
 async function saveAllPhotos() {
-  const records = savableRecordPhotos();
+  const records = savableRecordPhotos().filter(({ photo }) => !photo.referenceOnly);
   if (!records.length) return;
   const files = records.map(({ shareBlob, shareFilename }) => new File(
     [shareBlob],
@@ -732,7 +722,7 @@ async function saveAllPhotos() {
   elements.saveAll.disabled = true;
   elements.saveAll.textContent = "OPENING PHOTOS…";
   try {
-    await navigator.share({ files, title: "Dressup Sesh product photo records" });
+    await navigator.share({ files, title: "Dressup Sesh edited product photos" });
   } catch (error) {
     if (error?.name !== "AbortError") {
       window.alert("The photos could not be opened for saving. Please try Download All instead.");
@@ -742,31 +732,15 @@ async function saveAllPhotos() {
   }
 }
 
-async function saveReferencePhotos() {
-  const records = savableRecordPhotos().filter(({ photo }) => photo.referenceOnly);
-  if (!records.length) return;
-  const files = records.map(({ shareBlob, shareFilename }) => new File(
-    [shareBlob],
-    shareFilename,
-    { type: recordMimeType(shareBlob, shareFilename) }
-  ));
-
-  if (!navigator.share || !navigator.canShare?.({ files })) {
-    window.alert("This device cannot open the Reference Only photos together. Hold down each reference thumbnail to save it, or use Download All for the original files.");
-    return;
-  }
-
-  elements.saveReferences.disabled = true;
-  elements.saveReferences.textContent = "OPENING REFERENCES…";
-  try {
-    await navigator.share({ files, title: "Dressup Sesh reference photos" });
-  } catch (error) {
-    if (error?.name !== "AbortError") {
-      window.alert("The reference photos could not be opened together. Hold down each reference thumbnail to save it, or use Download All.");
-    }
-  } finally {
-    render();
-  }
+async function saveSingleReferencePhoto(photoId) {
+  const index = state.photos.findIndex((photo) => photo.id === photoId);
+  const photo = state.photos[index];
+  if (!photo?.referenceOnly || !photo.file) return;
+  await saveBlobToDevice(
+    photo.file,
+    referenceFileName(photo, index, photo.file),
+    "Dressup Sesh reference photo"
+  );
 }
 
 async function saveAllCreativePhotos() {
@@ -1003,7 +977,6 @@ elements.input.addEventListener("change", () => { addFiles(elements.input.files)
 elements.process.addEventListener("click", processPhotos);
 elements.downloadAll.addEventListener("click", downloadAllPhotos);
 elements.saveAll.addEventListener("click", saveAllPhotos);
-elements.saveReferences.addEventListener("click", saveReferencePhotos);
 elements.clearAll.addEventListener("click", clearAllPhotos);
 elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
