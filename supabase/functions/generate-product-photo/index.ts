@@ -35,7 +35,7 @@ function validImage(file: File) {
   return /^(image\/png|image\/jpeg|image\/webp)$/i.test(file.type) && file.size <= 12 * 1024 * 1024;
 }
 
-function buildPrompt(type: string, productCount: number, hasReference: boolean, instructions: string) {
+function buildPrompt(type: string, productCount: number, referenceOnlyCount: number, hasReference: boolean, instructions: string) {
   const creative = creativePrompts[type];
   const referenceRule = hasReference
     ? `The final input image is an inspiration reference. Use it only for pose, framing, camera angle, setting, lighting mood or layout. Do not copy its product, garment, color, pattern, branding, hardware, person identity or face.`
@@ -44,7 +44,9 @@ function buildPrompt(type: string, productCount: number, hasReference: boolean, 
 
   return `Create one ${creative.label} for a resale listing and social commerce workflow.
 
-The first ${productCount} input images show the same exact product from multiple angles and are the only source of truth for the item. Preserve its exact silhouette, proportions, color, material appearance, print, stitching, closures, hardware, heel and toe shape, straps, handles, pockets, labels and visible wear. Never add, remove, duplicate or redesign product features. Never invent a shoulder strap, accessory, logo or texture that is not clearly shown in the product photos.
+The first ${productCount} input images show the same exact product from multiple angles and are the primary source of truth for its appearance. Preserve its exact silhouette, proportions, color, material appearance, print, stitching, closures, hardware, heel and toe shape, straps, handles, pockets, labels and visible wear. Never add, remove, duplicate or redesign product features. Never invent a shoulder strap, accessory, logo or texture that is not clearly shown in the product photos.
+
+${referenceOnlyCount ? `The next ${referenceOnlyCount} input image${referenceOnlyCount === 1 ? " is" : "s are"} reference-only evidence for labels, measurements, construction and condition. Use their factual evidence to improve accuracy, but do not reproduce rulers, measuring tapes, hands, backgrounds, tags used only for documentation or other staging elements in the generated image.` : "No reference-only evidence images were supplied."}
 
 ${referenceRule}
 
@@ -75,6 +77,12 @@ Deno.serve(async (request: Request) => {
     if (images.some((image) => !validImage(image))) {
       return json({ error: "Product references must be JPG, PNG or WEBP files no larger than 12 MB." }, 415, cors);
     }
+    const requestedProductCount = Number.parseInt(String(form.get("product_count") || images.length), 10);
+    const productCount = Number.isFinite(requestedProductCount)
+      ? Math.max(0, Math.min(images.length, requestedProductCount))
+      : images.length;
+    if (!productCount) return json({ error: "Add at least one product photo that is not marked Reference Only." }, 400, cors);
+    const referenceOnlyCount = images.length - productCount;
 
     const referenceValue = form.get("reference");
     const reference = referenceValue instanceof File && referenceValue.size ? referenceValue : null;
@@ -85,9 +93,12 @@ Deno.serve(async (request: Request) => {
 
     const upstream = new FormData();
     upstream.append("model", "gpt-image-2");
-    images.forEach((image, index) => upstream.append("image[]", image, `product-${index + 1}.jpg`));
+    images.forEach((image, index) => {
+      const role = index < productCount ? "product" : "reference-only";
+      upstream.append("image[]", image, `${role}-${index + 1}.jpg`);
+    });
     if (reference) upstream.append("image[]", reference, "inspiration-reference.jpg");
-    upstream.append("prompt", buildPrompt(type, images.length, Boolean(reference), instructions));
+    upstream.append("prompt", buildPrompt(type, productCount, referenceOnlyCount, Boolean(reference), instructions));
     upstream.append("quality", "medium");
     upstream.append("size", creative.size);
     upstream.append("background", "opaque");
