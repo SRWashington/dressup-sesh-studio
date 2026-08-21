@@ -13,8 +13,7 @@ const state = {
   creativeType: "on_body",
   creativeReference: null,
   creativeReferenceUrl: "",
-  creativeResultUrl: "",
-  creativeResultBlob: null,
+  creativeResults: [],
   creativeGenerating: false,
   editorPhotoId: null,
   editorImage: null,
@@ -41,7 +40,7 @@ const elements = {
   creativeReference: $("#creative-reference"), referencePicker: $("#reference-picker"), referencePreview: $("#reference-preview"),
   referenceImage: $("#reference-image"), removeReference: $("#remove-reference"), creativeInstructions: $("#creative-instructions"),
   creativeGenerate: $("#creative-generate"), creativeOutput: $(".creative-output"), creativePlaceholder: $("#creative-placeholder"),
-  creativeOutputImage: $("#creative-output-image"), creativeDownload: $("#creative-download"), creativeSave: $("#creative-save"), creativeError: $("#creative-error"),
+  creativeResults: $("#creative-results"), creativeCount: $("#creative-count"), creativeError: $("#creative-error"),
   editorDialog: $("#photo-editor-dialog"), editorCanvas: $("#photo-editor-canvas"), editorBrush: $("#editor-brush-size"),
   editorBrushOutput: $("#editor-brush-output"), editorUndo: $("#editor-undo"), editorReset: $("#editor-reset"),
   editorRemove: $("#editor-mode-remove"), editorRestore: $("#editor-mode-restore"),
@@ -110,8 +109,8 @@ function resultFileName(photo, index) {
   return `clean-${String(index + 1).padStart(2, "0")}-${baseName || "photo"}.png`;
 }
 
-function referenceFileName(photo, index) {
-  const originalName = photo.originalFile?.name || photo.file.name || `photo-${index + 1}`;
+function referenceFileName(photo, index, source = photo.originalFile || photo.file) {
+  const originalName = source?.name || photo.originalFile?.name || photo.file.name || `photo-${index + 1}`;
   const safeName = originalName.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-|-$/g, "");
   return `reference-${String(index + 1).padStart(2, "0")}-${safeName || `photo-${index + 1}`}`;
 }
@@ -217,17 +216,39 @@ function removeCreativeReference() {
 }
 
 function resetCreativeOutput() {
-  if (state.creativeResultUrl) URL.revokeObjectURL(state.creativeResultUrl);
-  state.creativeResultUrl = "";
-  state.creativeResultBlob = null;
-  elements.creativeOutputImage.removeAttribute("src");
-  elements.creativeOutputImage.classList.add("hidden");
-  elements.creativeDownload.removeAttribute("href");
-  elements.creativeDownload.classList.add("hidden");
-  elements.creativeSave.classList.add("hidden");
+  state.creativeResults.forEach((result) => URL.revokeObjectURL(result.url));
+  state.creativeResults = [];
+  elements.creativeResults.innerHTML = "";
+  elements.creativeResults.classList.add("hidden");
+  elements.creativeCount.textContent = "";
   elements.creativePlaceholder.classList.remove("hidden");
   elements.creativeError.textContent = "";
   elements.creativeError.classList.add("hidden");
+}
+
+function renderCreativeResults() {
+  const hasResults = state.creativeResults.length > 0;
+  elements.creativePlaceholder.classList.toggle("hidden", hasResults);
+  elements.creativeResults.classList.toggle("hidden", !hasResults);
+  elements.creativeCount.textContent = hasResults
+    ? `${state.creativeResults.length} IMAGE${state.creativeResults.length === 1 ? "" : "S"} KEPT`
+    : "";
+  elements.creativeResults.innerHTML = state.creativeResults.map((result) => `
+    <article class="creative-result-card">
+      <img src="${result.url}" alt="Generated ${result.label}">
+      <div class="creative-result-meta">
+        <span>${result.label.toUpperCase()} · ${String(result.sequence).padStart(2, "0")}</span>
+        <div class="output-actions">
+          <button type="button" data-save-creative="${result.id}">SAVE TO PHOTOS</button>
+          <a href="${result.url}" download="${result.filename}">DOWNLOAD</a>
+        </div>
+      </div>
+    </article>`).join("");
+  $$('[data-save-creative]').forEach((button) => button.addEventListener("click", () => {
+    const result = state.creativeResults.find((item) => item.id === button.dataset.saveCreative);
+    if (!result) return;
+    void saveBlobToDevice(result.blob, result.filename, `Dressup Sesh ${result.label}`);
+  }));
 }
 
 function clearAllPhotos() {
@@ -666,13 +687,16 @@ function savableRecordPhotos() {
   return state.photos
     .map((photo, index) => ({ photo, index }))
     .map(({ photo, index }) => {
-      const blob = photo.referenceOnly ? photo.originalFile || photo.file : photo.resultBlob;
-      if (!blob) return null;
+      const archiveBlob = photo.referenceOnly ? photo.originalFile || photo.file : photo.resultBlob;
+      const shareBlob = photo.referenceOnly ? photo.file : photo.resultBlob;
+      if (!archiveBlob || !shareBlob) return null;
       return {
         photo,
         index,
-        blob,
-        filename: photo.referenceOnly ? referenceFileName(photo, index) : resultFileName(photo, index)
+        archiveBlob,
+        shareBlob,
+        archiveFilename: photo.referenceOnly ? referenceFileName(photo, index, archiveBlob) : resultFileName(photo, index),
+        shareFilename: photo.referenceOnly ? referenceFileName(photo, index, shareBlob) : resultFileName(photo, index)
       };
     })
     .filter(Boolean);
@@ -681,10 +705,10 @@ function savableRecordPhotos() {
 async function saveAllPhotos() {
   const records = savableRecordPhotos();
   if (!records.length) return;
-  const files = records.map(({ blob, filename }) => new File(
-    [blob],
-    filename,
-    { type: recordMimeType(blob, filename) }
+  const files = records.map(({ shareBlob, shareFilename }) => new File(
+    [shareBlob],
+    shareFilename,
+    { type: recordMimeType(shareBlob, shareFilename) }
   ));
 
   if (!navigator.share || !navigator.canShare?.({ files })) {
@@ -713,8 +737,8 @@ async function downloadAllPhotos() {
   elements.downloadAll.textContent = "PACKAGING…";
   try {
     const zip = new window.JSZip();
-    records.forEach(({ blob, filename }) => {
-      zip.file(filename, blob);
+    records.forEach(({ archiveBlob, archiveFilename }) => {
+      zip.file(archiveFilename, archiveBlob);
     });
     const zipBlob = await zip.generateAsync({
       type: "blob",
@@ -883,16 +907,19 @@ async function generateCreativeImage() {
     const data = await response.json();
     if (!data.image) throw new Error("The image generator returned no image. Please try again.");
     const blob = base64ToBlob(data.image, data.mimeType || "image/jpeg");
-    resetCreativeOutput();
-    state.creativeResultBlob = blob;
-    state.creativeResultUrl = URL.createObjectURL(blob);
-    elements.creativeOutputImage.src = state.creativeResultUrl;
-    elements.creativeOutputImage.classList.remove("hidden");
-    elements.creativePlaceholder.classList.add("hidden");
-    elements.creativeDownload.href = state.creativeResultUrl;
-    elements.creativeDownload.download = `dressup-sesh-${state.creativeType.replaceAll("_", "-")}.jpg`;
-    elements.creativeDownload.classList.remove("hidden");
-    elements.creativeSave.classList.remove("hidden");
+    const sequence = state.creativeResults.length + 1;
+    const extension = blob.type === "image/png" ? "png" : "jpg";
+    const type = state.creativeType;
+    state.creativeResults.unshift({
+      id: crypto.randomUUID(),
+      sequence,
+      type,
+      label: creativeLabels[type].replace(/^GENERATE /, "").toLowerCase(),
+      blob,
+      url: URL.createObjectURL(blob),
+      filename: `dressup-sesh-${type.replaceAll("_", "-")}-${String(sequence).padStart(2, "0")}.${extension}`
+    });
+    renderCreativeResults();
   } catch (error) {
     elements.creativeError.textContent = error?.message || "The creative image could not be generated. Please try again.";
     elements.creativeError.classList.remove("hidden");
@@ -916,15 +943,6 @@ elements.listingButton.addEventListener("click", createListing);
 elements.emptyListing.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.emptyCreative.addEventListener("click", () => { $("[data-tab='photos']").click(); elements.input.click(); });
 elements.creativeGenerate.addEventListener("click", generateCreativeImage);
-elements.creativeSave.addEventListener("click", () => {
-  if (!state.creativeResultBlob) return;
-  const extension = state.creativeResultBlob.type === "image/png" ? "png" : "jpg";
-  void saveBlobToDevice(
-    state.creativeResultBlob,
-    `dressup-sesh-${state.creativeType.replaceAll("_", "-")}.${extension}`,
-    "Dressup Sesh creative image"
-  );
-});
 elements.editorCanvas.addEventListener("pointerdown", beginEditorStroke);
 elements.editorCanvas.addEventListener("pointermove", continueEditorStroke);
 elements.editorCanvas.addEventListener("pointerup", endEditorStroke);
