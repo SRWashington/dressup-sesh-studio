@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="AI-powered product photo cleanup, marketplace listing copy and creative images for online resellers.">
   <title>Dressup Sesh Studio</title>
-  <link rel="stylesheet" href="styles.css?v=marketplace-beta-1">
-  <link rel="stylesheet" href="auth.css?v=marketplace-beta-1">
+  <link rel="stylesheet" href="styles.css?v=transformation-demo-1">
+  <link rel="stylesheet" href="auth.css?v=transformation-demo-1">
   <style>
     .cloud-choice{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .cloud-choice>span{min-width:72px;margin-right:6px;font-size:9px;font-weight:800;letter-spacing:.15em}
@@ -48,6 +48,60 @@
           <article><span>03</span><div><strong>Create campaign images</strong><p>Generate fit, studio, social and editorial visuals without reshooting.</p></div></article>
         </div>
       </div>
+      <section class="transformation-demo" aria-labelledby="transformation-title">
+        <div class="transformation-intro">
+          <p class="eyebrow">ONE PHOTO SET · A COMPLETE RESULTS PACKAGE</p>
+          <h2 id="transformation-title">See the listing before it exists.</h2>
+          <p>Start with the kind of hanger photo already in your camera roll. Dressup Sesh turns it into assets that clean up the listing, sharpen the story and help shoppers picture the piece.</p>
+        </div>
+        <div class="transformation-story">
+          <div class="transformation-stage" data-demo-stage data-demo-active="clean">
+            <figure class="before-example">
+              <div class="demo-label"><span>BEFORE</span><small>Everyday seller photo</small></div>
+              <img src="assets/demo-dress-before.jpg" alt="Teal satin wrap dress photographed on a hanger in a cluttered bedroom" width="1122" height="1402" loading="lazy">
+            </figure>
+            <div class="results-package" aria-label="Dressup Sesh example results package">
+              <div class="package-heading"><span>RESULTS PACKAGE</span><small>3 ready-to-use assets</small></div>
+              <div class="result-stack">
+                <article class="demo-result clean-result" data-demo-result="clean">
+                  <div class="demo-label"><span>01 · CLEAN</span><small>Listing photo</small></div>
+                  <img src="assets/demo-dress-clean.jpg" alt="The same teal satin wrap dress isolated on a clean studio background" width="1122" height="1402" loading="lazy">
+                </article>
+                <article class="demo-result copy-result" data-demo-result="copy">
+                  <div class="demo-label"><span>02 · DESCRIBE</span><small>Searchable copy</small></div>
+                  <div class="copy-sample">
+                    <p class="copy-kicker">TEAL SATIN WRAP MIDI DRESS</p>
+                    <p>Rich jewel-tone satin meets a flattering wrap silhouette, softly puffed sleeves and effortless movement—an elevated choice for wedding guests, date nights and holiday dressing.</p>
+                    <div><span>SATIN</span><span>WRAP</span><span>OCCASION</span></div>
+                  </div>
+                </article>
+                <article class="demo-result creative-result" data-demo-result="creative">
+                  <div class="demo-label"><span>03 · IMAGINE</span><small>Editorial lifestyle image</small></div>
+                  <img src="assets/demo-dress-model.jpg" alt="A model wearing the same teal satin wrap dress in a warm editorial interior" width="1122" height="1402" loading="lazy">
+                </article>
+              </div>
+              <p class="package-note">One upload becomes a more complete product story.</p>
+            </div>
+          </div>
+          <div class="transformation-steps" aria-label="Value of each result">
+            <article class="transformation-step is-active" data-demo-step="clean">
+              <span>01</span>
+              <h3>Clean the distraction.</h3>
+              <p>A consistent studio background puts the product first and creates a polished, marketplace-ready main image.</p>
+            </article>
+            <article class="transformation-step" data-demo-step="copy">
+              <span>02</span>
+              <h3>Make the details searchable.</h3>
+              <p>Concise, specific language turns visible features into an intriguing reason to stop, search and click.</p>
+            </article>
+            <article class="transformation-step" data-demo-step="creative">
+              <span>03</span>
+              <h3>Show the possibility.</h3>
+              <p>An aspirational model image helps shoppers imagine the fit, mood and occasion—without planning another shoot.</p>
+            </article>
+          </div>
+        </div>
+      </section>
       <div class="public-trust">
         <p class="eyebrow">HOW YOUR PHOTOS ARE HANDLED</p>
         <div class="trust-grid">
@@ -235,6 +289,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=marketplace-beta-1"></script>
+  <script src="landing.js?v=transformation-demo-1"></script>
+  <script type="module" src="app.js?v=transformation-demo-1"></script>
 </body>
 </html>
